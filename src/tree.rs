@@ -51,10 +51,14 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
     }
 
     pub fn children(&self) -> Vec<Self> {
-        let nodes = self.node.children().map(|node| Self {
-            node,
-            attr_name: None,
-        });
+        let nodes = self
+            .node
+            .children()
+            .filter(|node| !(node.is_text() && node.text().unwrap().trim().is_empty()))
+            .map(|node| Self {
+                node,
+                attr_name: None,
+            });
         let attrs = self.node.attributes().map(|attr| Self {
             node: self.node.clone(),
             attr_name: Some(attr.name()),
@@ -67,6 +71,14 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
             self.node.attribute(name)
         } else {
             self.node.text()
+        }
+    }
+
+    pub fn range(&self) -> core::ops::Range<usize> {
+        if let Some(name) = self.attr_name {
+            self.node.attribute_node(name).unwrap().range()
+        } else {
+            self.node.range()
         }
     }
 
@@ -127,6 +139,7 @@ impl<'a, 'doc: 'a> XTree<'doc> {
             .0
             .descendants()
             .filter(|node| (node.is_element() || node.is_text()) && !node.has_children())
+            .filter(|node| !(node.is_text() && node.text().unwrap().trim().is_empty()))
             .map(|node| XNode {
                 node,
                 attr_name: None,

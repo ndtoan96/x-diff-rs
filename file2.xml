@@ -11,8 +11,10 @@
    <NewStuff>Smurf</NewStuff>
   </PersonName>
   <TelephoneInfo PhoneTech="Voice" PhoneUse="Work" >
-   <Telephone> <AreaCityCode>206</AreaCityCode>
-	<PhoneNumber>813-8698</PhoneNumber>
+   <Telephone>       <AreaCityCode>206</AreaCityCode>
+	<PhoneNumber>
+   813-8698
+   </PhoneNumber>
    </Telephone>
   </TelephoneInfo>
   <PaymentForm>

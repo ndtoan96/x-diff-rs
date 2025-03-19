@@ -16,6 +16,13 @@
    ...
   </PaymentForm>
   <Address>
+   <StreetNmbr POBox="4321-01">From hell</StreetNmbr>
+   <BldgRoom>Suite 800</BldgRoom>
+   <CityName>Seattle</CityName>
+   <StateProv PostalCode="98108">WA</StateProv>
+   <CountryName>USA</CountryName>
+  </Address>
+  <Address>
    <StreetNmbr POBox="4321-01">1200 Yakima St</StreetNmbr>
    <BldgRoom>Suite 800</BldgRoom>
    <CityName>Seattle</CityName>

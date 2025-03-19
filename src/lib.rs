@@ -55,3 +55,38 @@ fn calculate_hash_table<'doc>(tree: &'doc XTree) -> HashMap<XNodeId<'doc>, Diges
     }
     hash_table
 }
+
+#[cfg(test)]
+mod test {
+    use std::fs;
+
+    use roxmltree::Document;
+
+    use super::*;
+
+    #[test]
+    fn test_calculate_hash_table() {
+        let text1 = fs::read_to_string("file1.xml").unwrap();
+        let text2 = fs::read_to_string("file2.xml").unwrap();
+        let doc1 = Document::parse(&text1).unwrap();
+        let doc2 = Document::parse(&text2).unwrap();
+        let tree1 = XTree::from(doc1);
+        let tree2 = XTree::from(doc2);
+        let ht1 = calculate_hash_table(&tree1);
+        let ht2 = calculate_hash_table(&tree2);
+        let set: HashSet<_> = ht1.values().collect();
+        for (k, v) in ht2 {
+            if set.contains(&v) {
+                let node = tree2.get_node(k).unwrap();
+                let range = node.range();
+                let bytes = text2.as_bytes();
+                let sub_str = String::from_utf8_lossy(&bytes[range]);
+                println!("------");
+                println!("{}", sub_str);
+                if sub_str.trim() == "" {
+                    dbg!(node);
+                }
+            }
+        }
+    }
+}
