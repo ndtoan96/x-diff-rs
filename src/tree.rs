@@ -157,6 +157,10 @@ impl<'a, 'doc: 'a> XTree<'doc> {
         Ok(Self::from(Document::parse(text)?))
     }
 
+    pub fn print<'o>(&self, options: XTreePrintOptions<'o>) {
+        println!("{}", self.print_to_str(options));
+    }
+
     pub fn print_to_str<'o>(&self, options: XTreePrintOptions<'o>) -> String {
         fn node_to_str(node: &XNode) -> String {
             if let Some(name) = node.attr_name {

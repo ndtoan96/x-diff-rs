@@ -65,7 +65,20 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_calculate_hash_table() {
+    fn test_calculate_hash_table_same_tree() {
+        let text1 = fs::read_to_string("file1.xml").unwrap();
+        let tree1 = XTree::parse(&text1).unwrap();
+        let ht1 = calculate_hash_table(&tree1);
+
+        let text2 = fs::read_to_string("file1.xml").unwrap();
+        let tree2 = XTree::parse(&text2).unwrap();
+        let ht2 = calculate_hash_table(&tree2);
+
+        assert_eq!(ht1.get(&tree1.root().id()), ht2.get(&tree2.root().id()));
+    }
+
+    #[test]
+    fn test_calculate_hash_table_different_tree() {
         let text1 = fs::read_to_string("file1.xml").unwrap();
         let tree1 = XTree::parse(&text1).unwrap();
         let ht1 = calculate_hash_table(&tree1);
@@ -73,19 +86,17 @@ mod test {
             .iter()
             .map(|(k, v)| (*k, format!("{} - {:x}", k, v)))
             .collect();
-        let s1 = tree1.print_to_str(XTreePrintOptions::default().with_node_marker(&hex_marker1));
-        println!("{s1}");
+        tree1.print(XTreePrintOptions::default().with_node_marker(&hex_marker1));
 
-        let text2 = fs::read_to_string("file1.xml").unwrap();
+        let text2 = fs::read_to_string("file2.xml").unwrap();
         let tree2 = XTree::parse(&text2).unwrap();
         let ht2 = calculate_hash_table(&tree2);
         let hex_marker2 = ht2
             .iter()
             .map(|(k, v)| (*k, format!("{} - {:x}", k, v)))
             .collect();
-        let s2 = tree2.print_to_str(XTreePrintOptions::default().with_node_marker(&hex_marker2));
-        println!("{s2}");
+        tree2.print(XTreePrintOptions::default().with_node_marker(&hex_marker2));
 
-        assert_eq!(ht1.get(&tree1.root().id()), ht2.get(&tree2.root().id()));
+        assert_ne!(ht1.get(&tree1.root().id()), ht2.get(&tree2.root().id()));
     }
 }
