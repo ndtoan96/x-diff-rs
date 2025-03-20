@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 md5 = "0.7.0"
 roxmltree = "0.20.0"
+thiserror = "2.0.12"

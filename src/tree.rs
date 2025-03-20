@@ -1,5 +1,13 @@
+use std::{collections::HashMap, fmt::Display};
+
 use md5::Digest;
 use roxmltree::{Document, Node, NodeId};
+
+#[derive(Debug, thiserror::Error)]
+pub enum XTreeError {
+    #[error(transparent)]
+    ParseError(#[from] roxmltree::Error),
+}
 
 pub struct XTree<'doc>(Document<'doc>);
 
@@ -13,6 +21,15 @@ pub struct XNode<'a, 'doc: 'a> {
 pub enum XNodeId<'doc> {
     ElementOrText(NodeId),
     Attribute { node_id: NodeId, name: &'doc str },
+}
+
+impl<'doc> Display for XNodeId<'doc> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            XNodeId::ElementOrText(node_id) => write!(f, "{}", node_id.get()),
+            XNodeId::Attribute { node_id, name } => write!(f, "{}[{}]", node_id.get(), name),
+        }
+    }
 }
 
 impl<'doc> From<Document<'doc>> for XTree<'doc> {
@@ -51,6 +68,9 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
     }
 
     pub fn children(&self) -> Vec<Self> {
+        if self.attr_name.is_some() {
+            return Vec::new();
+        }
         let nodes = self
             .node
             .children()
@@ -103,7 +123,110 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct XTreePrintOptions<'o> {
+    node_marker: HashMap<XNodeId<'o>, String>,
+    indent: usize,
+}
+
+impl<'o> Default for XTreePrintOptions<'o> {
+    fn default() -> Self {
+        Self {
+            node_marker: HashMap::new(),
+            indent: 3,
+        }
+    }
+}
+
+impl<'o> XTreePrintOptions<'o> {
+    pub fn with_indent(mut self, n: usize) -> Self {
+        assert!(n > 0);
+        self.indent = n;
+        self
+    }
+
+    pub fn with_node_marker<D: Display>(mut self, marker: &HashMap<XNodeId<'o>, D>) -> Self {
+        let new_map = marker.iter().map(|(k, v)| (*k, v.to_string())).collect();
+        self.node_marker = new_map;
+        self
+    }
+}
+
 impl<'a, 'doc: 'a> XTree<'doc> {
+    pub fn parse(text: &'doc str) -> Result<Self, XTreeError> {
+        Ok(Self::from(Document::parse(text)?))
+    }
+
+    pub fn print_to_str<'o>(&self, options: XTreePrintOptions<'o>) -> String {
+        fn node_to_str(node: &XNode) -> String {
+            if let Some(name) = node.attr_name {
+                format!(
+                    "{}: {}",
+                    name,
+                    node.node.attribute(name).unwrap_or_default()
+                )
+            } else {
+                match node.node.node_type() {
+                    roxmltree::NodeType::Element => format!("<{}>", node.node.tag_name().name()),
+                    roxmltree::NodeType::Text => {
+                        let text = node.node.text().unwrap_or_default();
+                        format!(
+                            "{:40?}{}",
+                            text,
+                            if text.chars().count() > 40 { "..." } else { "" }
+                        )
+                    }
+                    _ => unreachable!(),
+                }
+            }
+        }
+
+        fn tree_to_str<'o>(
+            pipes: &mut Vec<bool>,
+            node: &XNode,
+            options: &XTreePrintOptions<'o>,
+        ) -> String {
+            let marker = if let Some(m) = options.node_marker.get(&node.id()) {
+                format!("[{}] ", m)
+            } else {
+                String::new()
+            };
+            let mut tree_str = if pipes.len() > 0 {
+                let mut prefix = String::new();
+                for pipe_char in &pipes[..pipes.len() - 1] {
+                    prefix.push(if *pipe_char { '│' } else { ' ' });
+                    prefix.push_str(&" ".repeat(options.indent - 1));
+                }
+                let suffix = if pipes[pipes.len() - 1] {
+                    format!("├─{}{}", marker, node_to_str(node))
+                } else {
+                    format!("└─{}{}", marker, node_to_str(node))
+                };
+                format!("{}{}", prefix, suffix)
+            } else {
+                format!("{}{}", marker, node_to_str(node))
+            };
+            if node.children().len() == 0 {
+                return tree_str;
+            }
+            let children = node.children();
+            pipes.push(true);
+            tree_str.push('\n');
+            for child in &children[..children.len() - 1] {
+                let line = tree_to_str(pipes, child, &options);
+                tree_str.push_str(&line);
+                tree_str.push('\n');
+            }
+            pipes.last_mut().map(|pipe| *pipe = false);
+            let line = tree_to_str(pipes, children.last().unwrap(), &options);
+            tree_str.push_str(&line);
+            pipes.pop();
+            tree_str
+        }
+
+        tree_to_str(&mut Vec::new(), &self.root(), &options)
+    }
+
     pub fn get_node(&'doc self, id: XNodeId<'doc>) -> Option<XNode<'a, 'doc>> {
         match id {
             XNodeId::ElementOrText(node_id) => self.0.get_node(node_id).map(|node| XNode {
@@ -145,5 +268,20 @@ impl<'a, 'doc: 'a> XTree<'doc> {
                 attr_name: None,
             });
         leaves.chain(attribute_nodes).collect()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::fs;
+
+    use super::*;
+
+    #[test]
+    fn test_print_tree() {
+        let content = fs::read_to_string("file1.xml").unwrap();
+        let tree = XTree::parse(&content).unwrap();
+        let s = tree.print_to_str(Default::default());
+        println!("{s}");
     }
 }

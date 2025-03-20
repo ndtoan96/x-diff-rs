@@ -18,6 +18,23 @@ impl Concat for Digest {
     }
 }
 
+// pub enum Edit<'tree1, 'tree2> {
+//     Insert(XNodeId<'tree2>),
+//     Delete(XNodeId<'tree1>),
+//     Update {
+//         node_id: XNodeId<'tree1>,
+//         old_value: &'tree1 str,
+//         new_value: &'tree2 str,
+//     },
+// }
+
+// pub fn diff<'tree1, 'tree2>(
+//     tree1: &'tree1 XTree,
+//     tree2: &'tree2 XTree,
+// ) -> Vec<Edit<'tree1, 'tree2>> {
+//     todo!()
+// }
+
 fn calculate_hash_table<'doc>(tree: &'doc XTree) -> HashMap<XNodeId<'doc>, Digest> {
     let mut hash_table = HashMap::new();
     let mut parents = HashSet::new();
@@ -59,34 +76,42 @@ fn calculate_hash_table<'doc>(tree: &'doc XTree) -> HashMap<XNodeId<'doc>, Diges
 #[cfg(test)]
 mod test {
     use std::fs;
-
-    use roxmltree::Document;
+    use tree::XTreePrintOptions;
 
     use super::*;
 
     #[test]
     fn test_calculate_hash_table() {
         let text1 = fs::read_to_string("file1.xml").unwrap();
-        let text2 = fs::read_to_string("file2.xml").unwrap();
-        let doc1 = Document::parse(&text1).unwrap();
-        let doc2 = Document::parse(&text2).unwrap();
-        let tree1 = XTree::from(doc1);
-        let tree2 = XTree::from(doc2);
+        let tree1 = XTree::parse(&text1).unwrap();
         let ht1 = calculate_hash_table(&tree1);
+        let hex_marker1 = ht1
+            .iter()
+            .map(|(k, v)| (*k, format!("{} - {:x}", k, v)))
+            .collect();
+        let s1 = tree1.print_to_str(XTreePrintOptions::default().with_node_marker(&hex_marker1));
+        println!("{s1}");
+
+        let text2 = fs::read_to_string("file1.xml").unwrap();
+        let tree2 = XTree::parse(&text2).unwrap();
         let ht2 = calculate_hash_table(&tree2);
-        let set: HashSet<_> = ht1.values().collect();
-        for (k, v) in ht2 {
-            if set.contains(&v) {
-                let node = tree2.get_node(k).unwrap();
-                let range = node.range();
-                let bytes = text2.as_bytes();
-                let sub_str = String::from_utf8_lossy(&bytes[range]);
-                println!("------");
-                println!("{}", sub_str);
-                if sub_str.trim() == "" {
-                    dbg!(node);
-                }
-            }
-        }
+        let hex_marker2 = ht2
+            .iter()
+            .map(|(k, v)| (*k, format!("{} - {:x}", k, v)))
+            .collect();
+        let s2 = tree2.print_to_str(XTreePrintOptions::default().with_node_marker(&hex_marker2));
+        println!("{s2}");
+
+        let text3 = fs::read_to_string("file1.xml").unwrap();
+        let tree3 = XTree::parse(&text3).unwrap();
+        let ht3 = calculate_hash_table(&tree3);
+        let hex_marker3 = ht3
+            .iter()
+            .map(|(k, v)| (*k, format!("{} - {:x}", k, v)))
+            .collect();
+        let s3 = tree3.print_to_str(XTreePrintOptions::default().with_node_marker(&hex_marker3));
+        println!("{s3}");
+
+        assert_eq!(ht1.get(&tree1.root().id()), ht2.get(&tree2.root().id()));
     }
 }
