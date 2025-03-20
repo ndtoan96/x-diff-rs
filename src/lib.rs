@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use md5::Digest;
-use tree::{XNodeId, XTree};
+use tree::{XNode, XNodeId, XTree};
 
 pub mod tree;
 
@@ -36,40 +36,24 @@ impl Concat for Digest {
 // }
 
 fn calculate_hash_table<'doc>(tree: &'doc XTree) -> HashMap<XNodeId<'doc>, Digest> {
-    let mut hash_table = HashMap::new();
-    let mut parents = HashSet::new();
-    for node in tree.get_leaves_nodes() {
-        hash_table.insert(node.id(), node.hash());
-        if let Some(parent) = node.parent() {
-            parents.insert(parent);
-        }
-    }
-    while parents.len() > 0 {
-        let mut tmp_parents = HashSet::new();
-        for node in parents {
-            if let Some(parent) = node.parent() {
-                tmp_parents.insert(parent);
-            }
-
-            // calculate accumulation hash for this node
-            if hash_table.contains_key(&node.id()) {
-                continue;
-            }
-            let mut acc = Digest([0; 16]);
+    fn hash_of_node<'a, 'doc>(
+        node: &'a XNode<'a, 'doc>,
+        ht: &mut HashMap<XNodeId<'doc>, Digest>,
+    ) -> Digest {
+        let hash = if node.children().len() == 0 {
+            node.hash()
+        } else {
+            let mut acc = node.hash();
             for child in node.children() {
-                if let Some(hash) = hash_table.get(&child.id()) {
-                    acc = acc.concat(*hash);
-                } else {
-                    let hash = child.hash();
-                    hash_table.insert(child.id(), hash);
-                    acc = acc.concat(hash);
-                }
+                acc = acc.concat(hash_of_node(&child, ht));
             }
-            acc = acc.concat(node.hash());
-            hash_table.insert(node.id(), acc);
-        }
-        parents = tmp_parents;
+            acc
+        };
+        ht.insert(node.id(), hash);
+        return hash;
     }
+    let mut hash_table = HashMap::new();
+    hash_of_node(&tree.root(), &mut hash_table);
     hash_table
 }
 
@@ -101,16 +85,6 @@ mod test {
             .collect();
         let s2 = tree2.print_to_str(XTreePrintOptions::default().with_node_marker(&hex_marker2));
         println!("{s2}");
-
-        let text3 = fs::read_to_string("file1.xml").unwrap();
-        let tree3 = XTree::parse(&text3).unwrap();
-        let ht3 = calculate_hash_table(&tree3);
-        let hex_marker3 = ht3
-            .iter()
-            .map(|(k, v)| (*k, format!("{} - {:x}", k, v)))
-            .collect();
-        let s3 = tree3.print_to_str(XTreePrintOptions::default().with_node_marker(&hex_marker3));
-        println!("{s3}");
 
         assert_eq!(ht1.get(&tree1.root().id()), ht2.get(&tree2.root().id()));
     }
