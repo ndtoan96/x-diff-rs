@@ -206,7 +206,7 @@ impl<'a, 'doc: 'a> XTree<'doc> {
                 String::new()
             };
             let marker = if let Some(m) = options.node_marker.get(&node.id()) {
-                format!("[{}] ", m)
+                format!("({}) ", m)
             } else {
                 String::new()
             };
