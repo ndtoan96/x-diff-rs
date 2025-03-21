@@ -1,4 +1,7 @@
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Display,
+};
 
 use md5::Digest;
 use tree::{XNode, XNodeId, XTree};
@@ -18,42 +21,133 @@ impl Concat for Digest {
     }
 }
 
-// pub enum Edit<'tree1, 'tree2> {
-//     Insert(XNodeId<'tree2>),
-//     Delete(XNodeId<'tree1>),
-//     Update {
-//         node_id: XNodeId<'tree1>,
-//         old_value: &'tree1 str,
-//         new_value: &'tree2 str,
-//     },
-// }
+#[derive(Debug, Clone)]
+pub enum Edit<'tree1, 'tree2> {
+    Insert {
+        child_node: XNodeId<'tree2>,
+        to: XNodeId<'tree1>,
+    },
+    Delete(XNodeId<'tree1>),
+    Update {
+        node_id: XNodeId<'tree1>,
+        old_value: String,
+        new_value: String,
+    },
+    ReplaceRoot,
+}
 
-// pub fn diff<'tree1, 'tree2>(
-//     tree1: &'tree1 XTree,
-//     tree2: &'tree2 XTree,
-// ) -> Vec<Edit<'tree1, 'tree2>> {
-//     todo!()
-// }
+impl Display for Edit<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Edit::Insert { child_node, to } => {
+                write!(f, "insert node {} to node {}", child_node, to)
+            }
+            Edit::Delete(node_id) => write!(f, "delete node {}", node_id),
+            Edit::Update {
+                node_id,
+                old_value,
+                new_value,
+            } => write!(f, "update node {}: {} -> {}", node_id, old_value, new_value),
+            Edit::ReplaceRoot => write!(f, "replace root node"),
+        }
+    }
+}
+
+pub fn diff<'doc1, 'doc2>(
+    tree1: &'doc1 XTree<'doc1>,
+    tree2: &'doc2 XTree<'doc2>,
+) -> Vec<Edit<'doc1, 'doc2>> {
+    fn diff_node<'doc1, 'doc2>(
+        node1: XNode<'_, 'doc1>,
+        ht1: &HashMap<XNodeId<'doc1>, Digest>,
+        node2: XNode<'_, 'doc2>,
+        ht2: &HashMap<XNodeId<'doc2>, Digest>,
+    ) -> Vec<Edit<'doc1, 'doc2>> {
+        if ht1.get(&node1.id()) == ht2.get(&node2.id()) {
+            return Vec::new();
+        }
+
+        // Leaf nodes with different hashes mean different values
+        if (node1.is_attribute() && node2.is_attribute()) || (node1.is_text() && node2.is_text()) {
+            return vec![Edit::Update {
+                node_id: node1.id(),
+                old_value: node1.value().unwrap_or_default().trim().to_string(),
+                new_value: node2.value().unwrap_or_default().trim().to_string(),
+            }];
+        }
+
+        let mut iht1: HashMap<_, _> = node1
+            .children()
+            .iter()
+            .map(|n| (*ht1.get(&n.id()).unwrap(), *n))
+            .collect();
+        let mut iht2: HashMap<_, _> = node2
+            .children()
+            .iter()
+            .map(|n| (*ht2.get(&n.id()).unwrap(), *n))
+            .collect();
+        let children_hashes1: HashSet<_> = iht1.keys().copied().collect();
+        let children_hashes2: HashSet<_> = iht2.keys().copied().collect();
+        let same_hashes: HashSet<_> = children_hashes1.intersection(&children_hashes2).collect();
+        iht1.retain(|k, _| !same_hashes.contains(&k));
+        iht2.retain(|k, _| !same_hashes.contains(&k));
+        let mut remaining_children1: HashSet<_> = iht1.into_values().collect();
+        let mut remaining_children2: HashSet<_> = iht2.into_values().collect();
+        let mut diff_pairs = Vec::new();
+        for n1 in &remaining_children1 {
+            for n2 in &remaining_children2 {
+                if n1.signature() == n2.signature() {
+                    diff_pairs.push((*n1, *n2, diff_node(*n1, ht1, *n2, ht2)));
+                }
+            }
+        }
+        diff_pairs.sort_by_key(|item| item.2.len());
+        let mut diff = Vec::new();
+        for (n1, n2, mut d) in diff_pairs {
+            if remaining_children1.contains(&n1) && remaining_children2.contains(&n2) {
+                diff.append(&mut d);
+                remaining_children1.remove(&n1);
+                remaining_children2.remove(&n2);
+            }
+        }
+        for n1 in remaining_children1 {
+            diff.push(Edit::Delete(n1.id()));
+        }
+        for n2 in remaining_children2 {
+            diff.push(Edit::Insert {
+                child_node: n2.id(),
+                to: node1.id(),
+            });
+        }
+        diff
+    }
+    if tree1.root().signature() != tree2.root().signature() {
+        return vec![Edit::ReplaceRoot];
+    }
+    let ht1 = calculate_hash_table(tree1);
+    let ht2 = calculate_hash_table(tree2);
+    diff_node(tree1.root(), &ht1, tree2.root(), &ht2)
+}
 
 fn calculate_hash_table<'doc>(tree: &'doc XTree) -> HashMap<XNodeId<'doc>, Digest> {
-    fn hash_of_node<'a, 'doc>(
-        node: &'a XNode<'a, 'doc>,
+    fn hash_of_node<'doc>(
+        node: XNode<'_, 'doc>,
         ht: &mut HashMap<XNodeId<'doc>, Digest>,
     ) -> Digest {
-        let hash = if node.children().len() == 0 {
+        let hash = if node.children().is_empty() {
             node.hash()
         } else {
             let mut acc = node.hash();
             for child in node.children() {
-                acc = acc.concat(hash_of_node(&child, ht));
+                acc = acc.concat(hash_of_node(child, ht));
             }
             acc
         };
         ht.insert(node.id(), hash);
-        return hash;
+        hash
     }
     let mut hash_table = HashMap::new();
-    hash_of_node(&tree.root(), &mut hash_table);
+    hash_of_node(tree.root(), &mut hash_table);
     hash_table
 }
 
@@ -98,5 +192,21 @@ mod test {
         tree2.print(XTreePrintOptions::default().with_node_marker(&hex_marker2));
 
         assert_ne!(ht1.get(&tree1.root().id()), ht2.get(&tree2.root().id()));
+    }
+
+    #[test]
+    fn test_diff() {
+        let text1 = fs::read_to_string("file1.xml").unwrap();
+        let tree1 = XTree::parse(&text1).unwrap();
+        tree1.print(XTreePrintOptions::default().with_node_id());
+
+        let text2 = fs::read_to_string("file2.xml").unwrap();
+        let tree2 = XTree::parse(&text2).unwrap();
+        tree2.print(XTreePrintOptions::default().with_node_id());
+
+        let diff = diff(&tree1, &tree2);
+        for e in diff {
+            println!("{}", e);
+        }
     }
 }

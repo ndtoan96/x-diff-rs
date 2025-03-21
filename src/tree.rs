@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{borrow::Cow, collections::HashMap, fmt::Display};
 
 use md5::Digest;
 use roxmltree::{Document, Node, NodeId};
@@ -23,7 +23,7 @@ pub enum XNodeId<'doc> {
     Attribute { node_id: NodeId, name: &'doc str },
 }
 
-impl<'doc> Display for XNodeId<'doc> {
+impl Display for XNodeId<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             XNodeId::ElementOrText(node_id) => write!(f, "{}", node_id.get()),
@@ -53,7 +53,7 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
     pub fn parent(&self) -> Option<Self> {
         if self.attr_name.is_some() {
             Some(Self {
-                node: self.node.clone(),
+                node: self.node,
                 attr_name: None,
             })
         } else {
@@ -80,10 +80,22 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
                 attr_name: None,
             });
         let attrs = self.node.attributes().map(|attr| Self {
-            node: self.node.clone(),
+            node: self.node,
             attr_name: Some(attr.name()),
         });
         nodes.chain(attrs).collect()
+    }
+
+    pub fn is_attribute(&self) -> bool {
+        self.attr_name.is_some()
+    }
+
+    pub fn is_text(&self) -> bool {
+        self.attr_name.is_none() && self.node.is_text()
+    }
+
+    pub fn is_element(&self) -> bool {
+        self.attr_name.is_none() && self.node.is_element()
     }
 
     pub fn value(&self) -> Option<&str> {
@@ -107,7 +119,7 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
             md5::compute(format!(
                 "{}={}",
                 name,
-                self.node.attribute(name).unwrap_or_default()
+                self.node.attribute(name).unwrap_or_default().trim()
             ))
         } else {
             match self.node.node_type() {
@@ -116,7 +128,25 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
                     let namespace = self.node.tag_name().namespace().unwrap_or_default();
                     md5::compute(format!("{}:{}", namespace, name))
                 }
-                roxmltree::NodeType::Text => md5::compute(self.node.text().unwrap_or_default()),
+                roxmltree::NodeType::Text => {
+                    md5::compute(self.node.text().unwrap_or_default().trim())
+                }
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    pub(crate) fn signature(&self) -> Cow<str> {
+        if let Some(name) = self.attr_name {
+            Cow::Borrowed(name)
+        } else {
+            match self.node.node_type() {
+                roxmltree::NodeType::Element => Cow::Owned(format!(
+                    "{}:{}",
+                    self.node.tag_name().namespace().unwrap_or_default(),
+                    self.node.tag_name().name()
+                )),
+                roxmltree::NodeType::Text => Cow::Borrowed("text"),
                 _ => unreachable!(),
             }
         }
@@ -126,14 +156,16 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
 #[derive(Debug, Clone)]
 pub struct XTreePrintOptions<'o> {
     node_marker: HashMap<XNodeId<'o>, String>,
+    with_id: bool,
     indent: usize,
 }
 
-impl<'o> Default for XTreePrintOptions<'o> {
+impl Default for XTreePrintOptions<'_> {
     fn default() -> Self {
         Self {
             node_marker: HashMap::new(),
             indent: 3,
+            with_id: false,
         }
     }
 }
@@ -150,6 +182,11 @@ impl<'o> XTreePrintOptions<'o> {
         self.node_marker = new_map;
         self
     }
+
+    pub fn with_node_id(mut self) -> Self {
+        self.with_id = true;
+        self
+    }
 }
 
 impl<'a, 'doc: 'a> XTree<'doc> {
@@ -157,13 +194,23 @@ impl<'a, 'doc: 'a> XTree<'doc> {
         Ok(Self::from(Document::parse(text)?))
     }
 
-    pub fn print<'o>(&self, options: XTreePrintOptions<'o>) {
+    pub fn print(&self, options: XTreePrintOptions<'_>) {
         println!("{}", self.print_to_str(options));
     }
 
-    pub fn print_to_str<'o>(&self, options: XTreePrintOptions<'o>) -> String {
-        fn node_to_str(node: &XNode) -> String {
-            if let Some(name) = node.attr_name {
+    pub fn print_to_str(&self, options: XTreePrintOptions<'_>) -> String {
+        fn node_to_str(node: &XNode, options: &XTreePrintOptions) -> String {
+            let id_str = if options.with_id {
+                format!("[{}] ", node.id())
+            } else {
+                String::new()
+            };
+            let marker = if let Some(m) = options.node_marker.get(&node.id()) {
+                format!("[{}] ", m)
+            } else {
+                String::new()
+            };
+            let node_str = if let Some(name) = node.attr_name {
                 format!(
                     "{}: {}",
                     name,
@@ -182,47 +229,43 @@ impl<'a, 'doc: 'a> XTree<'doc> {
                     }
                     _ => unreachable!(),
                 }
-            }
+            };
+            format!("{}{}{}", marker, id_str, node_str)
         }
 
-        fn tree_to_str<'o>(
+        fn tree_to_str(
             pipes: &mut Vec<bool>,
             node: &XNode,
-            options: &XTreePrintOptions<'o>,
+            options: &XTreePrintOptions<'_>,
         ) -> String {
-            let marker = if let Some(m) = options.node_marker.get(&node.id()) {
-                format!("[{}] ", m)
-            } else {
-                String::new()
-            };
-            let mut tree_str = if pipes.len() > 0 {
+            let mut tree_str = if !pipes.is_empty() {
                 let mut prefix = String::new();
                 for pipe_char in &pipes[..pipes.len() - 1] {
                     prefix.push(if *pipe_char { '│' } else { ' ' });
                     prefix.push_str(&" ".repeat(options.indent - 1));
                 }
                 let suffix = if pipes[pipes.len() - 1] {
-                    format!("├─{}{}", marker, node_to_str(node))
+                    format!("├─{}", node_to_str(node, options))
                 } else {
-                    format!("└─{}{}", marker, node_to_str(node))
+                    format!("└─{}", node_to_str(node, options))
                 };
                 format!("{}{}", prefix, suffix)
             } else {
-                format!("{}{}", marker, node_to_str(node))
+                format!("{}", node_to_str(node, options))
             };
-            if node.children().len() == 0 {
+            if node.children().is_empty() {
                 return tree_str;
             }
             let children = node.children();
             pipes.push(true);
             tree_str.push('\n');
             for child in &children[..children.len() - 1] {
-                let line = tree_to_str(pipes, child, &options);
+                let line = tree_to_str(pipes, child, options);
                 tree_str.push_str(&line);
                 tree_str.push('\n');
             }
-            pipes.last_mut().map(|pipe| *pipe = false);
-            let line = tree_to_str(pipes, children.last().unwrap(), &options);
+            *pipes.last_mut().unwrap() = false;
+            let line = tree_to_str(pipes, children.last().unwrap(), options);
             tree_str.push_str(&line);
             pipes.pop();
             tree_str
@@ -250,29 +293,6 @@ impl<'a, 'doc: 'a> XTree<'doc> {
             attr_name: None,
         }
     }
-
-    pub(crate) fn get_leaves_nodes(&'doc self) -> Vec<XNode<'a, 'doc>> {
-        let attribute_nodes = self
-            .0
-            .descendants()
-            .filter(|node| node.is_element())
-            .flat_map(|node| {
-                node.attributes().map(move |attr| XNode {
-                    node: node.clone(),
-                    attr_name: Some(attr.name()),
-                })
-            });
-        let leaves = self
-            .0
-            .descendants()
-            .filter(|node| (node.is_element() || node.is_text()) && !node.has_children())
-            .filter(|node| !(node.is_text() && node.text().unwrap().trim().is_empty()))
-            .map(|node| XNode {
-                node,
-                attr_name: None,
-            });
-        leaves.chain(attribute_nodes).collect()
-    }
 }
 
 #[cfg(test)]
@@ -285,7 +305,7 @@ mod test {
     fn test_print_tree() {
         let content = fs::read_to_string("file1.xml").unwrap();
         let tree = XTree::parse(&content).unwrap();
-        let s = tree.print_to_str(Default::default());
+        let s = tree.print_to_str(XTreePrintOptions::default().with_node_id());
         println!("{s}");
     }
 }
