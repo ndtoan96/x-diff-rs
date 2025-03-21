@@ -176,20 +176,22 @@ mod test {
         let text1 = fs::read_to_string("file1.xml").unwrap();
         let tree1 = XTree::parse(&text1).unwrap();
         let ht1 = calculate_hash_table(&tree1);
-        let hex_marker1 = ht1
-            .iter()
-            .map(|(k, v)| (*k, format!("{} - {:x}", k, v)))
-            .collect();
-        tree1.print(XTreePrintOptions::default().with_node_marker(&hex_marker1));
+        let hex_marker1 = ht1.iter().map(|(k, v)| (*k, format!("{:x}", v))).collect();
+        tree1.print(
+            XTreePrintOptions::default()
+                .with_node_marker(&hex_marker1)
+                .with_node_id(),
+        );
 
         let text2 = fs::read_to_string("file2.xml").unwrap();
         let tree2 = XTree::parse(&text2).unwrap();
         let ht2 = calculate_hash_table(&tree2);
-        let hex_marker2 = ht2
-            .iter()
-            .map(|(k, v)| (*k, format!("{} - {:x}", k, v)))
-            .collect();
-        tree2.print(XTreePrintOptions::default().with_node_marker(&hex_marker2));
+        let hex_marker2 = ht2.iter().map(|(k, v)| (*k, format!("{:x}", v))).collect();
+        tree2.print(
+            XTreePrintOptions::default()
+                .with_node_marker(&hex_marker2)
+                .with_node_id(),
+        );
 
         assert_ne!(ht1.get(&tree1.root().id()), ht2.get(&tree2.root().id()));
     }
