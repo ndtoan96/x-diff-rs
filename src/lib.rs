@@ -47,7 +47,11 @@ impl Display for Edit<'_, '_> {
                 node_id,
                 old_value,
                 new_value,
-            } => write!(f, "update node {}: {} -> {}", node_id, old_value, new_value),
+            } => write!(
+                f,
+                "update node {}: {:?} -> {:?}",
+                node_id, old_value, new_value
+            ),
             Edit::ReplaceRoot => write!(f, "replace root node"),
         }
     }
