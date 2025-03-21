@@ -10,7 +10,7 @@ This library implements the X-Diff algorithm from paper
 ```rust
 use x_diff_rs::{
     diff,
-    tree::{XTree, XTreePrintOptions},
+    tree::XTree,
 };
 
 fn main() {
@@ -83,8 +83,6 @@ fn main() {
     "#;
     let tree1 = XTree::parse(&text1).unwrap();
     let tree2 = XTree::parse(&text2).unwrap();
-    tree1.print(XTreePrintOptions::default().with_node_id());
-    tree2.print(XTreePrintOptions::default().with_node_id());
     let difference = diff(&tree1, &tree2);
     for d in difference {
         println!("{d}");

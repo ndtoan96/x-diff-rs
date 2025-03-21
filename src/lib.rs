@@ -8,11 +8,10 @@ This library implements the X-Diff algorithm from paper [X-Diff: An Effective Ch
 ```rust
 use x_diff_rs::{
     diff,
-    tree::{XTree, XTreePrintOptions},
+    tree::XTree,
 };
 
-fn main() {
-    let text1 = r#"
+let text1 = r#"
 <Profile>
  <Customer>
   <PersonName NameType="Default">
@@ -47,7 +46,7 @@ fn main() {
 </Profile>
     "#;
 
-    let text2 = r#"
+let text2 = r#"
 <Profile>
  <Customer>
   <PersonName NameType="Default">
@@ -78,15 +77,12 @@ fn main() {
   <Status>Single</Status>
  </Customer>
 </Profile>
-    "#;
-    let tree1 = XTree::parse(&text1).unwrap();
-    let tree2 = XTree::parse(&text2).unwrap();
-    tree1.print(XTreePrintOptions::default().with_node_id());
-    tree2.print(XTreePrintOptions::default().with_node_id());
-    let difference = diff(&tree1, &tree2);
-    for d in difference {
-        println!("{d}");
-    }
+"#;
+let tree1 = XTree::parse(&text1).unwrap();
+let tree2 = XTree::parse(&text2).unwrap();
+let difference = diff(&tree1, &tree2);
+for d in difference {
+    println!("{d}");
 }
 ```
 */
@@ -151,17 +147,19 @@ impl Display for Edit<'_, '_> {
     }
 }
 
+type Diff<'tree1, 'tree2> = Vec<Edit<'tree1, 'tree2>>;
+
 /// Calculate the difference between two XML trees, represented by the minum edit operations to transform `tree1` to `tree2`.
 pub fn diff<'doc1, 'doc2>(
     tree1: &'doc1 XTree<'doc1>,
     tree2: &'doc2 XTree<'doc2>,
-) -> Vec<Edit<'doc1, 'doc2>> {
+) -> Diff<'doc1, 'doc2> {
     fn diff_node<'doc1, 'doc2>(
         node1: XNode<'_, 'doc1>,
         ht1: &HashMap<XNodeId<'doc1>, Digest>,
         node2: XNode<'_, 'doc2>,
         ht2: &HashMap<XNodeId<'doc2>, Digest>,
-    ) -> Vec<Edit<'doc1, 'doc2>> {
+    ) -> Diff<'doc1, 'doc2> {
         if ht1.get(&node1.id()) == ht2.get(&node2.id()) {
             return Vec::new();
         }
@@ -253,6 +251,7 @@ fn calculate_hash_table<'doc>(tree: &'doc XTree) -> HashMap<XNodeId<'doc>, Diges
 #[cfg(test)]
 mod test {
     use std::fs;
+    #[cfg(feature = "print")]
     use tree::XTreePrintOptions;
 
     use super::*;
@@ -275,22 +274,27 @@ mod test {
         let text1 = fs::read_to_string("test/file1.xml").unwrap();
         let tree1 = XTree::parse(&text1).unwrap();
         let ht1 = calculate_hash_table(&tree1);
-        let hex_marker1 = ht1.iter().map(|(k, v)| (*k, format!("{:x}", v))).collect();
-        tree1.print(
-            XTreePrintOptions::default()
-                .with_node_marker(&hex_marker1)
-                .with_node_id(),
-        );
 
         let text2 = fs::read_to_string("test/file2.xml").unwrap();
         let tree2 = XTree::parse(&text2).unwrap();
         let ht2 = calculate_hash_table(&tree2);
-        let hex_marker2 = ht2.iter().map(|(k, v)| (*k, format!("{:x}", v))).collect();
-        tree2.print(
-            XTreePrintOptions::default()
-                .with_node_marker(&hex_marker2)
-                .with_node_id(),
-        );
+
+        #[cfg(feature = "print")]
+        {
+            let hex_marker1 = ht1.iter().map(|(k, v)| (*k, format!("{:x}", v))).collect();
+            tree1.print(
+                XTreePrintOptions::default()
+                    .with_node_marker(&hex_marker1)
+                    .with_node_id(),
+            );
+
+            let hex_marker2 = ht2.iter().map(|(k, v)| (*k, format!("{:x}", v))).collect();
+            tree2.print(
+                XTreePrintOptions::default()
+                    .with_node_marker(&hex_marker2)
+                    .with_node_id(),
+            );
+        }
 
         assert_ne!(ht1.get(&tree1.root().id()), ht2.get(&tree2.root().id()));
     }
@@ -299,11 +303,15 @@ mod test {
     fn test_diff() {
         let text1 = fs::read_to_string("test/file1.xml").unwrap();
         let tree1 = XTree::parse(&text1).unwrap();
-        tree1.print(XTreePrintOptions::default().with_node_id());
 
         let text2 = fs::read_to_string("test/file2.xml").unwrap();
         let tree2 = XTree::parse(&text2).unwrap();
-        tree2.print(XTreePrintOptions::default().with_node_id());
+
+        #[cfg(feature = "print")]
+        {
+            tree1.print(XTreePrintOptions::default().with_node_id());
+            tree2.print(XTreePrintOptions::default().with_node_id());
+        }
 
         let diff = diff(&tree1, &tree2);
         diff.iter().any(|d| {

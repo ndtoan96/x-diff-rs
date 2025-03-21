@@ -1,6 +1,6 @@
 [package]
 name = "x-diff-rs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "A library to compare XML semantically"
 authors = ["Nguyen Duc Toan <ntoan96@gmail.com>"]
@@ -17,3 +17,6 @@ thiserror = "2.0.12"
 
 [dev-dependencies]
 regex = "1.11.1"
+
+[features]
+print = []

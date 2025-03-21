@@ -1,7 +1,8 @@
-use std::{borrow::Cow, collections::HashMap, fmt::Display};
-
 use md5::Digest;
 use roxmltree::{Document, ExpandedName, Node, NodeId};
+#[cfg(feature = "print")]
+use std::collections::HashMap;
+use std::{borrow::Cow, fmt::Display};
 
 #[derive(Debug, Clone)]
 pub enum XTreeError {
@@ -181,6 +182,7 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
 }
 
 /// Options for priting the XML tree
+#[cfg(feature = "print")]
 #[derive(Debug, Clone)]
 pub struct XTreePrintOptions<'o> {
     node_marker: HashMap<XNodeId<'o>, String>,
@@ -188,6 +190,7 @@ pub struct XTreePrintOptions<'o> {
     indent: usize,
 }
 
+#[cfg(feature = "print")]
 impl Default for XTreePrintOptions<'_> {
     fn default() -> Self {
         Self {
@@ -198,6 +201,7 @@ impl Default for XTreePrintOptions<'_> {
     }
 }
 
+#[cfg(feature = "print")]
 impl<'o> XTreePrintOptions<'o> {
     pub fn with_indent(mut self, n: usize) -> Self {
         assert!(n > 0);
@@ -228,11 +232,13 @@ impl<'a, 'doc: 'a> XTree<'doc> {
     }
 
     /// Print the tree to stdout.
+    #[cfg(feature = "print")]
     pub fn print(&self, options: XTreePrintOptions<'_>) {
         println!("{}", self.print_to_str(options));
     }
 
     /// Print the tree to a String.
+    #[cfg(feature = "print")]
     pub fn print_to_str(&self, options: XTreePrintOptions<'_>) -> String {
         fn node_to_str(node: &XNode, options: &XTreePrintOptions) -> String {
             let id_str = if options.with_id {
@@ -337,7 +343,7 @@ impl<'a, 'doc: 'a> XTree<'doc> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "print"))]
 mod test {
     use std::fs;
 
