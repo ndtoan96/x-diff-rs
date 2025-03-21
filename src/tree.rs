@@ -1,16 +1,18 @@
 use std::{borrow::Cow, collections::HashMap, fmt::Display};
 
 use md5::Digest;
-use roxmltree::{Document, Node, NodeId};
+use roxmltree::{Document, ExpandedName, Node, NodeId};
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone)]
 pub enum XTreeError {
-    #[error(transparent)]
-    ParseError(#[from] roxmltree::Error),
+    ParseError(roxmltree::Error),
 }
 
+/// A tree representation of the XML format. It is a wrapper around [roxmltree::Document]
+#[derive(Debug)]
 pub struct XTree<'doc>(Document<'doc>);
 
+/// A node in the XML tree. It can be an element node, an attribute node, or a text node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct XNode<'a, 'doc: 'a> {
     node: Node<'a, 'doc>,
@@ -21,6 +23,13 @@ pub struct XNode<'a, 'doc: 'a> {
 pub enum XNodeId<'doc> {
     ElementOrText(NodeId),
     Attribute { node_id: NodeId, name: &'doc str },
+}
+
+#[derive(Debug, Clone)]
+pub enum XNodeName<'a, 'b> {
+    TagName(ExpandedName<'a, 'b>),
+    AttributeName(&'a str),
+    Text,
 }
 
 impl Display for XNodeId<'_> {
@@ -39,6 +48,7 @@ impl<'doc> From<Document<'doc>> for XTree<'doc> {
 }
 
 impl<'a, 'doc: 'a> XNode<'a, 'doc> {
+    /// Get node id.
     pub fn id(&'a self) -> XNodeId<'doc> {
         if let Some(name) = self.attr_name {
             XNodeId::Attribute {
@@ -50,6 +60,20 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
         }
     }
 
+    /// Get node name.
+    pub fn name(&self) -> XNodeName {
+        if let Some(name) = self.attr_name {
+            XNodeName::AttributeName(name)
+        } else {
+            if self.is_text() {
+                XNodeName::Text
+            } else {
+                XNodeName::TagName(self.node.tag_name())
+            }
+        }
+    }
+
+    /// Get the parent node.
     pub fn parent(&self) -> Option<Self> {
         if self.attr_name.is_some() {
             Some(Self {
@@ -67,6 +91,7 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
         }
     }
 
+    /// Get the children nodes.
     pub fn children(&self) -> Vec<Self> {
         if self.attr_name.is_some() {
             return Vec::new();
@@ -98,6 +123,7 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
         self.attr_name.is_none() && self.node.is_element()
     }
 
+    /// Get the node value. Only attribute and text node have value.
     pub fn value(&self) -> Option<&str> {
         if let Some(name) = self.attr_name {
             self.node.attribute(name)
@@ -106,6 +132,7 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
         }
     }
 
+    /// Get the byte range of this node from the original text.
     pub fn range(&self) -> core::ops::Range<usize> {
         if let Some(name) = self.attr_name {
             self.node.attribute_node(name).unwrap().range()
@@ -153,6 +180,7 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
     }
 }
 
+/// Options for priting the XML tree
 #[derive(Debug, Clone)]
 pub struct XTreePrintOptions<'o> {
     node_marker: HashMap<XNodeId<'o>, String>,
@@ -177,12 +205,14 @@ impl<'o> XTreePrintOptions<'o> {
         self
     }
 
+    /// Attach markers to nodes while printing. The marker will be wrapped around `()`.
     pub fn with_node_marker<D: Display>(mut self, marker: &HashMap<XNodeId<'o>, D>) -> Self {
         let new_map = marker.iter().map(|(k, v)| (*k, v.to_string())).collect();
         self.node_marker = new_map;
         self
     }
 
+    /// Attach ID to nodes while printing. The node id will be wrapped around `[]`.
     pub fn with_node_id(mut self) -> Self {
         self.with_id = true;
         self
@@ -190,14 +220,19 @@ impl<'o> XTreePrintOptions<'o> {
 }
 
 impl<'a, 'doc: 'a> XTree<'doc> {
+    /// Parse XML to tree structure.
     pub fn parse(text: &'doc str) -> Result<Self, XTreeError> {
-        Ok(Self::from(Document::parse(text)?))
+        Ok(Self::from(
+            Document::parse(text).map_err(|e| XTreeError::ParseError(e))?,
+        ))
     }
 
+    /// Print the tree to stdout.
     pub fn print(&self, options: XTreePrintOptions<'_>) {
         println!("{}", self.print_to_str(options));
     }
 
+    /// Print the tree to a String.
     pub fn print_to_str(&self, options: XTreePrintOptions<'_>) -> String {
         fn node_to_str(node: &XNode, options: &XTreePrintOptions) -> String {
             let id_str = if options.with_id {
@@ -274,6 +309,7 @@ impl<'a, 'doc: 'a> XTree<'doc> {
         tree_to_str(&mut Vec::new(), &self.root(), &options)
     }
 
+    /// Get an [XNode] from [XNodeId].
     pub fn get_node(&'doc self, id: XNodeId<'doc>) -> Option<XNode<'a, 'doc>> {
         match id {
             XNodeId::ElementOrText(node_id) => self.0.get_node(node_id).map(|node| XNode {
@@ -287,11 +323,17 @@ impl<'a, 'doc: 'a> XTree<'doc> {
         }
     }
 
+    /// Get the root node.
     pub fn root(&self) -> XNode {
         XNode {
             node: self.0.root_element(),
             attr_name: None,
         }
+    }
+
+    /// Get the underlying roxmltree::Document.
+    pub fn get_roxmltree_doc(self) -> roxmltree::Document<'doc> {
+        self.0
     }
 }
 

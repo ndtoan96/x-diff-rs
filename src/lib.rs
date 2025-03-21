@@ -1,3 +1,9 @@
+/*!
+A library to compare XML files unorderedly.
+
+This library implements the X-Diff algorithm from paper [X-Diff: An Effective Change Detection Algorithm for XML Documents](https://pages.cs.wisc.edu/~yuanwang/papers/xdiff.pdf).
+*/
+
 use std::{
     collections::{HashMap, HashSet},
     fmt::Display,
@@ -6,6 +12,7 @@ use std::{
 use md5::Digest;
 use tree::{XNode, XNodeId, XTree};
 
+/// XML parsing and tree operations.
 pub mod tree;
 
 trait Concat {
@@ -57,6 +64,7 @@ impl Display for Edit<'_, '_> {
     }
 }
 
+/// Calculate the difference between two XML trees, represented by the minum edit operations to transform `tree1` to `tree2`.
 pub fn diff<'doc1, 'doc2>(
     tree1: &'doc1 XTree<'doc1>,
     tree2: &'doc2 XTree<'doc2>,
