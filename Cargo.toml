@@ -2,6 +2,13 @@
 name = "x-diff-rs"
 version = "0.1.0"
 edition = "2024"
+description = "A library to compare XML semantically"
+authors = ["Nguyen Duc Toan <ntoan96@gmail.com>"]
+license = "MIT OR Apache-2.0"
+keywords = ["xml", "compare", "diff", "x-diff"]
+categories = ["algorithms"]
+repository = "https://github.com/ndtoan96/x-diff-rs"
+readme = "README.md"
 
 [dependencies]
 md5 = "0.7.0"
