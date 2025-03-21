@@ -164,11 +164,11 @@ mod test {
 
     #[test]
     fn test_calculate_hash_table_same_tree() {
-        let text1 = fs::read_to_string("file1.xml").unwrap();
+        let text1 = fs::read_to_string("test/file1.xml").unwrap();
         let tree1 = XTree::parse(&text1).unwrap();
         let ht1 = calculate_hash_table(&tree1);
 
-        let text2 = fs::read_to_string("file1.xml").unwrap();
+        let text2 = fs::read_to_string("test/file1.xml").unwrap();
         let tree2 = XTree::parse(&text2).unwrap();
         let ht2 = calculate_hash_table(&tree2);
 
@@ -177,7 +177,7 @@ mod test {
 
     #[test]
     fn test_calculate_hash_table_different_tree() {
-        let text1 = fs::read_to_string("file1.xml").unwrap();
+        let text1 = fs::read_to_string("test/file1.xml").unwrap();
         let tree1 = XTree::parse(&text1).unwrap();
         let ht1 = calculate_hash_table(&tree1);
         let hex_marker1 = ht1.iter().map(|(k, v)| (*k, format!("{:x}", v))).collect();
@@ -187,7 +187,7 @@ mod test {
                 .with_node_id(),
         );
 
-        let text2 = fs::read_to_string("file2.xml").unwrap();
+        let text2 = fs::read_to_string("test/file2.xml").unwrap();
         let tree2 = XTree::parse(&text2).unwrap();
         let ht2 = calculate_hash_table(&tree2);
         let hex_marker2 = ht2.iter().map(|(k, v)| (*k, format!("{:x}", v))).collect();
@@ -202,15 +202,30 @@ mod test {
 
     #[test]
     fn test_diff() {
-        let text1 = fs::read_to_string("file1.xml").unwrap();
+        let text1 = fs::read_to_string("test/file1.xml").unwrap();
         let tree1 = XTree::parse(&text1).unwrap();
         tree1.print(XTreePrintOptions::default().with_node_id());
 
-        let text2 = fs::read_to_string("file2.xml").unwrap();
+        let text2 = fs::read_to_string("test/file2.xml").unwrap();
         let tree2 = XTree::parse(&text2).unwrap();
         tree2.print(XTreePrintOptions::default().with_node_id());
 
         let diff = diff(&tree1, &tree2);
+        diff.iter().any(|d| {
+            regex::Regex::new(r#"update node \d+: \"George\" -> \"Fred\""#)
+                .unwrap()
+                .is_match(&d.to_string())
+        });
+        diff.iter().any(|d| {
+            regex::Regex::new(r#"insert node \d+[Attr] to node \d+"#)
+                .unwrap()
+                .is_match(&d.to_string())
+        });
+        diff.iter().any(|d| {
+            regex::Regex::new(r#"insert node \d+[Foo] to node \d+"#)
+                .unwrap()
+                .is_match(&d.to_string())
+        });
         for e in diff {
             println!("{}", e);
         }

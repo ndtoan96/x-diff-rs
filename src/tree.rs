@@ -303,9 +303,61 @@ mod test {
 
     #[test]
     fn test_print_tree() {
-        let content = fs::read_to_string("file1.xml").unwrap();
+        let content = fs::read_to_string("test/file1.xml").unwrap();
         let tree = XTree::parse(&content).unwrap();
-        let s = tree.print_to_str(XTreePrintOptions::default().with_node_id());
+        let s = tree.print_to_str(XTreePrintOptions::default());
+        let expected = r#"
+<Profile>
+└─<Customer>
+   ├─<PersonName>
+   │  ├─<NameTitle>
+   │  │  └─"Mr."
+   │  ├─<GivenName>
+   │  │  └─"George"
+   │  ├─<MiddleName>
+   │  │  └─"A."
+   │  ├─<SurName>
+   │  │  └─"Smith"
+   │  └─NameType: Default
+   ├─<TelephoneInfo>
+   │  ├─<Telephone>
+   │  │  ├─<AreaCityCode>
+   │  │  │  └─"206"
+   │  │  └─<PhoneNumber>
+   │  │     └─"813-8698"
+   │  ├─PhoneTech: Voice
+   │  └─PhoneUse: Work
+   ├─<PaymentForm>
+   │  └─"\n   ...\n  "
+   ├─<Address>
+   │  ├─<StreetNmbr>
+   │  │  ├─"From hell"
+   │  │  └─POBox: 4321-01
+   │  ├─<BldgRoom>
+   │  │  └─"Suite 800"
+   │  ├─<CityName>
+   │  │  └─"Seattle"
+   │  ├─<StateProv>
+   │  │  ├─"WA"
+   │  │  └─PostalCode: 98108
+   │  └─<CountryName>
+   │     └─"USA"
+   └─<Address>
+      ├─<StreetNmbr>
+      │  ├─"1200 Yakima St"
+      │  └─POBox: 4321-01
+      ├─<BldgRoom>
+      │  └─"Suite 800"
+      ├─<CityName>
+      │  └─"Seattle"
+      ├─<StateProv>
+      │  ├─"WA"
+      │  └─PostalCode: 98108
+      └─<CountryName>
+         └─"USA"
+        "#;
         println!("{s}");
+
+        assert_eq!(s.trim(), expected.trim());
     }
 }
