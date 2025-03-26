@@ -261,12 +261,12 @@ impl<'a, 'doc: 'a> XTree<'doc> {
                 match node.node.node_type() {
                     roxmltree::NodeType::Element => format!("<{}>", node.node.tag_name().name()),
                     roxmltree::NodeType::Text => {
-                        let text = node.node.text().unwrap_or_default();
-                        format!(
-                            "{:40?}{}",
-                            text,
-                            if text.chars().count() > 40 { "..." } else { "" }
-                        )
+                        let text = node.node.text().unwrap_or_default().trim();
+                        let mut short_text: String = text.chars().take(40).collect();
+                        if text.chars().count() > 40 {
+                            short_text.push_str("...");
+                        }
+                        format!("{:?}", short_text)
                     }
                     _ => unreachable!(),
                 }
@@ -366,6 +366,8 @@ mod test {
    │  │  └─"A."
    │  ├─<SurName>
    │  │  └─"Smith"
+   │  ├─<Bio>
+   │  │  └─"A skilled engineer with a passion for so..."
    │  └─NameType: Default
    ├─<TelephoneInfo>
    │  ├─<Telephone>
@@ -376,7 +378,7 @@ mod test {
    │  ├─PhoneTech: Voice
    │  └─PhoneUse: Work
    ├─<PaymentForm>
-   │  └─"\n   ...\n  "
+   │  └─"..."
    ├─<Address>
    │  ├─<StreetNmbr>
    │  │  ├─"From hell"
@@ -403,7 +405,7 @@ mod test {
       │  └─PostalCode: 98108
       └─<CountryName>
          └─"USA"
-        "#;
+"#;
         println!("{s}");
 
         assert_eq!(s.trim(), expected.trim());
