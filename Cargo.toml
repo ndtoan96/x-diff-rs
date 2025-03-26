@@ -1,6 +1,6 @@
 [package]
 name = "x-diff-rs"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 description = "A library to compare XML semantically"
 authors = ["Nguyen Duc Toan <ntoan96@gmail.com>"]
