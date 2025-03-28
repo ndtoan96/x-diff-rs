@@ -1,7 +1,5 @@
 use md5::Digest;
 use roxmltree::{Document, ExpandedName, Node, NodeId};
-#[cfg(feature = "print")]
-use std::collections::HashMap;
 use std::{borrow::Cow, fmt::Display};
 
 #[derive(Debug, Clone)]
@@ -181,138 +179,12 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
     }
 }
 
-/// Options for priting the XML tree
-#[cfg(feature = "print")]
-#[derive(Debug, Clone)]
-pub struct XTreePrintOptions<'o> {
-    node_marker: HashMap<XNodeId<'o>, String>,
-    with_id: bool,
-    indent: usize,
-}
-
-#[cfg(feature = "print")]
-impl Default for XTreePrintOptions<'_> {
-    fn default() -> Self {
-        Self {
-            node_marker: HashMap::new(),
-            indent: 3,
-            with_id: false,
-        }
-    }
-}
-
-#[cfg(feature = "print")]
-impl<'o> XTreePrintOptions<'o> {
-    pub fn with_indent(mut self, n: usize) -> Self {
-        assert!(n > 0);
-        self.indent = n;
-        self
-    }
-
-    /// Attach markers to nodes while printing. The marker will be wrapped around `()`.
-    pub fn with_node_marker<D: Display>(mut self, marker: &HashMap<XNodeId<'o>, D>) -> Self {
-        let new_map = marker.iter().map(|(k, v)| (*k, v.to_string())).collect();
-        self.node_marker = new_map;
-        self
-    }
-
-    /// Attach ID to nodes while printing. The node id will be wrapped around `[]`.
-    pub fn with_node_id(mut self) -> Self {
-        self.with_id = true;
-        self
-    }
-}
-
 impl<'a, 'doc: 'a> XTree<'doc> {
     /// Parse XML to tree structure.
     pub fn parse(text: &'doc str) -> Result<Self, XTreeError> {
         Ok(Self::from(
             Document::parse(text).map_err(|e| XTreeError::ParseError(e))?,
         ))
-    }
-
-    /// Print the tree to stdout.
-    #[cfg(feature = "print")]
-    pub fn print(&self, options: XTreePrintOptions<'_>) {
-        println!("{}", self.print_to_str(options));
-    }
-
-    /// Print the tree to a String.
-    #[cfg(feature = "print")]
-    pub fn print_to_str(&self, options: XTreePrintOptions<'_>) -> String {
-        fn node_to_str(node: &XNode, options: &XTreePrintOptions) -> String {
-            let id_str = if options.with_id {
-                format!("[{}] ", node.id())
-            } else {
-                String::new()
-            };
-            let marker = if let Some(m) = options.node_marker.get(&node.id()) {
-                format!("({}) ", m)
-            } else {
-                String::new()
-            };
-            let node_str = if let Some(name) = node.attr_name {
-                format!(
-                    "{}: {}",
-                    name,
-                    node.node.attribute(name).unwrap_or_default()
-                )
-            } else {
-                match node.node.node_type() {
-                    roxmltree::NodeType::Element => format!("<{}>", node.node.tag_name().name()),
-                    roxmltree::NodeType::Text => {
-                        let text = node.node.text().unwrap_or_default().trim();
-                        let mut short_text: String = text.chars().take(40).collect();
-                        if text.chars().count() > 40 {
-                            short_text.push_str("...");
-                        }
-                        format!("{:?}", short_text)
-                    }
-                    _ => unreachable!(),
-                }
-            };
-            format!("{}{}{}", marker, id_str, node_str)
-        }
-
-        fn tree_to_str(
-            pipes: &mut Vec<bool>,
-            node: &XNode,
-            options: &XTreePrintOptions<'_>,
-        ) -> String {
-            let mut tree_str = if !pipes.is_empty() {
-                let mut prefix = String::new();
-                for pipe_char in &pipes[..pipes.len() - 1] {
-                    prefix.push(if *pipe_char { '│' } else { ' ' });
-                    prefix.push_str(&" ".repeat(options.indent - 1));
-                }
-                let suffix = if pipes[pipes.len() - 1] {
-                    format!("├─{}", node_to_str(node, options))
-                } else {
-                    format!("└─{}", node_to_str(node, options))
-                };
-                format!("{}{}", prefix, suffix)
-            } else {
-                format!("{}", node_to_str(node, options))
-            };
-            if node.children().is_empty() {
-                return tree_str;
-            }
-            let children = node.children();
-            pipes.push(true);
-            tree_str.push('\n');
-            for child in &children[..children.len() - 1] {
-                let line = tree_to_str(pipes, child, options);
-                tree_str.push_str(&line);
-                tree_str.push('\n');
-            }
-            *pipes.last_mut().unwrap() = false;
-            let line = tree_to_str(pipes, children.last().unwrap(), options);
-            tree_str.push_str(&line);
-            pipes.pop();
-            tree_str
-        }
-
-        tree_to_str(&mut Vec::new(), &self.root(), &options)
     }
 
     /// Get an [XNode] from [XNodeId].
@@ -343,18 +215,354 @@ impl<'a, 'doc: 'a> XTree<'doc> {
     }
 }
 
-#[cfg(all(test, feature = "print"))]
-mod test {
-    use std::fs;
+#[cfg(feature = "print")]
+pub mod print {
+    use termcolor::ColorSpec;
 
-    use super::*;
+    use crate::diff::{Edit, diff};
 
-    #[test]
-    fn test_print_tree() {
-        let content = fs::read_to_string("test/file1.xml").unwrap();
-        let tree = XTree::parse(&content).unwrap();
-        let s = tree.print_to_str(XTreePrintOptions::default());
-        let expected = r#"
+    use super::{XNode, XNodeId, XTree};
+    use std::{collections::HashMap, fmt::Display, io::Write};
+
+    pub struct WriteTreeOptions<'a> {
+        marker: HashMap<XNodeId<'a>, String>,
+        with_id: bool,
+        indent: usize,
+    }
+
+    pub struct WriteTreeDiffOptions {
+        indent: usize,
+        gutter: bool,
+    }
+
+    impl Default for WriteTreeDiffOptions {
+        fn default() -> Self {
+            Self {
+                indent: 3,
+                gutter: true,
+            }
+        }
+    }
+
+    impl WriteTreeDiffOptions {
+        pub fn indent(mut self, n: usize) -> Self {
+            self.indent = n;
+            self
+        }
+
+        pub fn with_gutter(mut self, yes: bool) -> Self {
+            self.gutter = yes;
+            self
+        }
+    }
+
+    pub fn write_tree_diff<W: Write>(
+        w: &mut W,
+        tree1: &XTree,
+        tree2: &XTree,
+        options: WriteTreeDiffOptions,
+    ) -> std::io::Result<()> {
+        let edits = diff(tree1, tree2);
+
+        // trees are the same
+        if edits.is_empty() {
+            return write!(w, "The trees are the same.");
+        }
+        for e in &edits {
+            println!("{e}");
+        }
+
+        // trees are completely different
+        if matches!(edits[0], Edit::ReplaceRoot) {
+            let mut vlines = Vec::new();
+            write_subtree(
+                w,
+                tree1.root(),
+                &WriteTreeOptions::default().with_indent(options.indent),
+                Some("-"),
+                None,
+                &mut vlines,
+            )?;
+            return write_subtree(
+                w,
+                tree2.root(),
+                &WriteTreeOptions::default().with_indent(options.indent),
+                Some("+"),
+                None,
+                &mut vlines,
+            );
+        }
+
+        let mut changed_nodes = HashMap::new();
+        for e in edits {
+            let key = match e {
+                crate::diff::Edit::Insert {
+                    child_node: _,
+                    to_node,
+                } => to_node.id(),
+                crate::diff::Edit::Delete(node) => node.id(),
+                crate::diff::Edit::Update { old, new: _ } => old.id(),
+                crate::diff::Edit::ReplaceRoot => unreachable!(),
+            };
+            changed_nodes.entry(key).or_insert(Vec::new()).push(e);
+        }
+
+        let mut vlines = Vec::new();
+        write_subtree_diff(w, tree1.root(), &changed_nodes, &options, &mut vlines)
+    }
+
+    fn write_subtree_diff<W: Write>(
+        w: &mut W,
+        node: XNode,
+        changed_nodes: &HashMap<XNodeId, Vec<Edit>>,
+        options: &WriteTreeDiffOptions,
+        vlines: &mut Vec<bool>,
+    ) -> std::io::Result<()> {
+        if let Some(edits) = changed_nodes.get(&node.id()) {
+            if matches!(edits[0], Edit::Insert { .. }) {
+                write_node_line(
+                    w,
+                    node,
+                    &WriteTreeOptions::default().with_indent(options.indent),
+                    Some(" "),
+                    None,
+                    vlines,
+                )?;
+                let children = node.children();
+                if children.is_empty() {
+                    return Ok(());
+                }
+                vlines.push(true);
+                for child in children {
+                    write_subtree_diff(w, child, &changed_nodes, options, vlines)?;
+                }
+            }
+            let last_index = edits.len() - 1;
+            for (i, e) in edits.into_iter().enumerate() {
+                match e {
+                    Edit::Insert {
+                        child_node,
+                        to_node: _,
+                    } => {
+                        if i == last_index {
+                            *vlines.last_mut().unwrap() = false;
+                        }
+                        write_subtree(
+                            w,
+                            *child_node,
+                            &WriteTreeOptions::default().with_indent(options.indent),
+                            Some("+"),
+                            None,
+                            vlines,
+                        )?;
+                    }
+                    Edit::Delete(_) => write_subtree(
+                        w,
+                        node,
+                        &WriteTreeOptions::default().with_indent(options.indent),
+                        Some("-"),
+                        None,
+                        vlines,
+                    )?,
+                    Edit::Update { old, new } => {
+                        write_subtree(
+                            w,
+                            *old,
+                            &WriteTreeOptions::default().with_indent(options.indent),
+                            Some("-"),
+                            None,
+                            vlines,
+                        )?;
+                        write_subtree(
+                            w,
+                            *new,
+                            &WriteTreeOptions::default().with_indent(options.indent),
+                            Some("+"),
+                            None,
+                            vlines,
+                        )?;
+                    }
+                    Edit::ReplaceRoot => unreachable!(),
+                }
+            }
+            if matches!(edits[0], Edit::Insert { .. }) {
+                vlines.pop();
+            }
+        } else {
+            write_node_line(
+                w,
+                node,
+                &WriteTreeOptions::default().with_indent(options.indent),
+                Some(" "),
+                None,
+                vlines,
+            )?;
+            let children = node.children();
+            if children.is_empty() {
+                return Ok(());
+            }
+            vlines.push(true);
+            let last_index = children.len() - 1;
+            for (i, child) in children.into_iter().enumerate() {
+                if i == last_index {
+                    *vlines.last_mut().unwrap() = false;
+                }
+                write_subtree_diff(w, child, &changed_nodes, options, vlines)?;
+            }
+            vlines.pop();
+        }
+        Ok(())
+    }
+
+    impl Default for WriteTreeOptions<'_> {
+        fn default() -> Self {
+            Self {
+                marker: HashMap::new(),
+                indent: 3,
+                with_id: false,
+            }
+        }
+    }
+
+    impl<'a> WriteTreeOptions<'a> {
+        pub fn with_indent(mut self, n: usize) -> Self {
+            assert!(n > 0);
+            self.indent = n;
+            self
+        }
+
+        /// Attach markers to nodes while printing. The marker will be wrapped around `()`.
+        pub fn with_marker<D: Display>(mut self, marker: &HashMap<XNodeId<'a>, D>) -> Self {
+            let new_map = marker.iter().map(|(k, v)| (*k, v.to_string())).collect();
+            self.marker = new_map;
+            self
+        }
+
+        /// Attach ID to nodes while printing. The node id will be wrapped around `[]`.
+        pub fn with_node_id(mut self) -> Self {
+            self.with_id = true;
+            self
+        }
+    }
+
+    pub fn print_tree(tree: &XTree, options: WriteTreeOptions) {
+        let mut stdout = std::io::stdout();
+        write_tree(&mut stdout, tree, options).unwrap();
+    }
+
+    pub fn write_tree<W: Write>(
+        w: &mut W,
+        tree: &XTree,
+        options: WriteTreeOptions,
+    ) -> std::io::Result<()> {
+        let mut vlines = Vec::new();
+        write_subtree(w, tree.root(), &options, None, None, &mut vlines)
+    }
+
+    fn node_text_prefix(node: &XNode, with_id: bool, marker: &HashMap<XNodeId, String>) -> String {
+        let id_str = if with_id {
+            format!("[{}] ", node.id())
+        } else {
+            String::new()
+        };
+        let m = if let Some(m) = marker.get(&node.id()) {
+            format!("({}) ", m)
+        } else {
+            String::new()
+        };
+        format!("{}{}", id_str, m)
+    }
+
+    fn node_text(node: &XNode, prefix: &str) -> String {
+        let node_str = if let Some(name) = node.attr_name {
+            format!(
+                "{}: {}",
+                name,
+                node.node.attribute(name).unwrap_or_default()
+            )
+        } else {
+            match node.node.node_type() {
+                roxmltree::NodeType::Element => format!("<{}>", node.node.tag_name().name()),
+                roxmltree::NodeType::Text => {
+                    let text = node.node.text().unwrap_or_default().trim();
+                    let mut short_text: String = text.chars().take(40).collect();
+                    if text.chars().count() > 40 {
+                        short_text.push_str("...");
+                    }
+                    format!("{:?}", short_text)
+                }
+                _ => unreachable!(),
+            }
+        };
+        format!("{}{}", prefix, node_str)
+    }
+
+    fn write_node_line<W: Write>(
+        w: &mut W,
+        node: XNode,
+        options: &WriteTreeOptions<'_>,
+        gutter: Option<&str>,
+        color: Option<&ColorSpec>,
+        vlines: &mut Vec<bool>,
+    ) -> std::io::Result<()> {
+        let gutter_str = gutter.unwrap_or_default();
+        let node_prefix = node_text_prefix(&node, options.with_id, &options.marker);
+        let node_line = if !vlines.is_empty() {
+            let mut prefix = String::new();
+            for pipe_char in &vlines[..vlines.len() - 1] {
+                prefix.push(if *pipe_char { '│' } else { ' ' });
+                prefix.push_str(&" ".repeat(options.indent - 1));
+            }
+            let suffix = if vlines[vlines.len() - 1] {
+                format!("├─{}", node_text(&node, &node_prefix))
+            } else {
+                format!("└─{}", node_text(&node, &node_prefix))
+            };
+            format!("{}{}", prefix, suffix)
+        } else {
+            format!("{}", node_text(&node, &node_prefix))
+        };
+        writeln!(w, "{}{}", gutter_str, node_line)
+    }
+
+    fn write_subtree<W: Write>(
+        w: &mut W,
+        node: XNode,
+        options: &WriteTreeOptions<'_>,
+        gutter: Option<&str>,
+        color: Option<&ColorSpec>,
+        vlines: &mut Vec<bool>,
+    ) -> std::io::Result<()> {
+        write_node_line(w, node, options, gutter, color, vlines)?;
+        let children = node.children();
+        if children.is_empty() {
+            return Ok(());
+        }
+        vlines.push(true);
+        let last_index = children.len() - 1;
+        for (i, child) in children.into_iter().enumerate() {
+            if i == last_index {
+                *vlines.last_mut().unwrap() = false;
+            }
+            write_subtree(w, child, options, gutter, color, vlines)?;
+        }
+        vlines.pop();
+        Ok(())
+    }
+
+    #[cfg(test)]
+    mod test {
+        use std::{fs, io::Cursor};
+
+        use super::*;
+        #[test]
+        fn test_print_tree() {
+            let content = fs::read_to_string("test/file1.xml").unwrap();
+            let tree = XTree::parse(&content).unwrap();
+            let mut buffer = Vec::new();
+            let mut cursor = Cursor::new(&mut buffer);
+            write_tree(&mut cursor, &tree, WriteTreeOptions::default()).unwrap();
+            let expected = r#"
 <Profile>
 └─<Customer>
    ├─<PersonName>
@@ -406,8 +614,17 @@ mod test {
       └─<CountryName>
          └─"USA"
 "#;
-        println!("{s}");
+            assert_eq!(expected.trim(), String::from_utf8_lossy(&buffer).trim());
+        }
 
-        assert_eq!(s.trim(), expected.trim());
+        #[test]
+        fn test_print_diff() {
+            let text1 = fs::read_to_string("test/file1.xml").unwrap();
+            let tree1 = XTree::parse(&text1).unwrap();
+            let text2 = fs::read_to_string("test/file2.xml").unwrap();
+            let tree2 = XTree::parse(&text2).unwrap();
+            let mut stdout = std::io::stdout();
+            write_tree_diff(&mut stdout, &tree1, &tree2, WriteTreeDiffOptions::default()).unwrap();
+        }
     }
 }

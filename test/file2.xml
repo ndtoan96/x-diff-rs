@@ -26,6 +26,7 @@
    <CityName>Seattle</CityName>
    <StateProv PostalCode="98108">WA</StateProv>
    <CountryName>USA</CountryName>
+   <Planet>Earth</Planet>
   </Address>
   <RelatedTraveler Relation="Child">
    <PersonName>

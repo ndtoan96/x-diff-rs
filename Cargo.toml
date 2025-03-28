@@ -13,10 +13,11 @@ readme = "README.md"
 [dependencies]
 md5 = "0.7.0"
 roxmltree = "0.20.0"
+termcolor = { version = "1.4.1", optional = true }
 thiserror = "2.0.12"
 
 [dev-dependencies]
 regex = "1.11.1"
 
 [features]
-print = []
+print = ["dep:termcolor"]
