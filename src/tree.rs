@@ -232,6 +232,7 @@ pub mod print {
     #[derive(Debug, Clone)]
     pub struct PrintTreeDiffOptions {
         indent: usize,
+        color: bool,
     }
 
     #[derive(Debug, Clone, Copy)]
@@ -453,7 +454,11 @@ pub mod print {
     }
 
     pub fn print_tree_diff(tree1: &XTree, tree2: &XTree, options: PrintTreeDiffOptions) {
-        let mut stdout = StandardStream::stdout(ColorChoice::Always);
+        let mut stdout = StandardStream::stdout(if options.color {
+            ColorChoice::Always
+        } else {
+            ColorChoice::Never
+        });
         write_tree_diff(&mut stdout, tree1, tree2, options).unwrap();
     }
 
