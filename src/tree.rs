@@ -256,13 +256,21 @@ pub mod print {
 
     impl Default for PrintTreeDiffOptions {
         fn default() -> Self {
-            Self { indent: 3 }
+            Self {
+                indent: 3,
+                color: true,
+            }
         }
     }
 
     impl PrintTreeDiffOptions {
         pub fn indent(mut self, n: usize) -> Self {
             self.indent = n;
+            self
+        }
+
+        pub fn with_color(mut self, yes: bool) -> Self {
+            self.color = yes;
             self
         }
     }
@@ -278,9 +286,6 @@ pub mod print {
         // trees are the same
         if edits.is_empty() {
             return write!(w, "The trees are the same.");
-        }
-        for e in &edits {
-            println!("{e}");
         }
 
         // trees are completely different
@@ -509,6 +514,15 @@ pub mod print {
         format!("{}{}", prefix, node_str)
     }
 
+    fn set_color<W: WriteColor>(w: &mut W, gutter: GutterKind) -> std::io::Result<()> {
+        match gutter {
+            GutterKind::None => w.reset(),
+            GutterKind::Blank => w.reset(),
+            GutterKind::Add => w.set_color(ColorSpec::new().set_fg(Some(Color::Green))),
+            GutterKind::Delete => w.set_color(ColorSpec::new().set_fg(Some(Color::Red))),
+        }
+    }
+
     fn write_node_line<W: WriteColor>(
         w: &mut W,
         node: XNode,
@@ -516,6 +530,7 @@ pub mod print {
         gutter: GutterKind,
         vlines: &mut Vec<bool>,
     ) -> std::io::Result<()> {
+        set_color(w, gutter)?;
         let gutter_str = gutter.symbol();
         let node_prefix = node_text_prefix(&node, options.with_id, &options.marker);
         let node_line = if !vlines.is_empty() {
@@ -533,7 +548,8 @@ pub mod print {
         } else {
             format!("{}", node_text(&node, &node_prefix))
         };
-        writeln!(w, "{}{}", gutter_str, node_line)
+        writeln!(w, "{}{}", gutter_str, node_line)?;
+        w.reset()
     }
 
     fn write_subtree<W: WriteColor>(
@@ -543,16 +559,7 @@ pub mod print {
         gutter: GutterKind,
         vlines: &mut Vec<bool>,
     ) -> std::io::Result<()> {
-        match gutter {
-            GutterKind::None => (),
-            GutterKind::Blank => (),
-            GutterKind::Add => {
-                w.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
-            }
-            GutterKind::Delete => {
-                w.set_color(ColorSpec::new().set_fg(Some(Color::Red)))?;
-            }
-        }
+        set_color(w, gutter)?;
         write_node_line(w, node, options, gutter, vlines)?;
         let children = node.children();
         if children.is_empty() {
@@ -647,8 +654,7 @@ pub mod print {
             let tree1 = XTree::parse(&text1).unwrap();
             let text2 = fs::read_to_string("test/file2.xml").unwrap();
             let tree2 = XTree::parse(&text2).unwrap();
-            let mut stdout = StandardStream::stdout(ColorChoice::Always);
-            write_tree_diff(&mut stdout, &tree1, &tree2, PrintTreeDiffOptions::default()).unwrap();
+            print_tree_diff(&tree1, &tree2, PrintTreeDiffOptions::default());
         }
     }
 }
