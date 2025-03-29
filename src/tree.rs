@@ -453,11 +453,13 @@ pub mod print {
         }
     }
 
+    /// Print the tree to stdout
     pub fn print_tree(tree: &XTree, options: PrintTreeOptions) {
         let mut stdout = StandardStream::stdout(ColorChoice::Never);
         write_tree(&mut stdout, tree, options).unwrap();
     }
 
+    /// Print the tree difference to stdout
     pub fn print_tree_diff(tree1: &XTree, tree2: &XTree, options: PrintTreeDiffOptions) {
         let mut stdout = StandardStream::stdout(if options.color {
             ColorChoice::Always
