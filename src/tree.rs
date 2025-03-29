@@ -217,50 +217,62 @@ impl<'a, 'doc: 'a> XTree<'doc> {
 
 #[cfg(feature = "print")]
 pub mod print {
-    use termcolor::ColorSpec;
+    use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 
     use crate::diff::{Edit, diff};
 
     use super::{XNode, XNodeId, XTree};
     use std::{collections::HashMap, fmt::Display, io::Write};
 
-    pub struct WriteTreeOptions<'a> {
+    #[derive(Debug, Clone)]
+    pub struct PrintTreeOptions<'a> {
         marker: HashMap<XNodeId<'a>, String>,
         with_id: bool,
         indent: usize,
     }
 
-    pub struct WriteTreeDiffOptions {
+    #[derive(Debug, Clone)]
+    pub struct PrintTreeDiffOptions {
         indent: usize,
-        gutter: bool,
     }
 
-    impl Default for WriteTreeDiffOptions {
-        fn default() -> Self {
-            Self {
-                indent: 3,
-                gutter: true,
+    #[derive(Debug, Clone, Copy)]
+    enum GutterKind {
+        None,
+        Blank,
+        Add,
+        Delete,
+    }
+
+    impl GutterKind {
+        fn symbol(&self) -> &'static str {
+            match self {
+                GutterKind::None => "",
+                GutterKind::Blank => " ",
+                GutterKind::Add => "+",
+                GutterKind::Delete => "-",
             }
         }
     }
 
-    impl WriteTreeDiffOptions {
+    impl Default for PrintTreeDiffOptions {
+        fn default() -> Self {
+            Self { indent: 3 }
+        }
+    }
+
+    impl PrintTreeDiffOptions {
         pub fn indent(mut self, n: usize) -> Self {
             self.indent = n;
             self
         }
-
-        pub fn with_gutter(mut self, yes: bool) -> Self {
-            self.gutter = yes;
-            self
-        }
     }
 
-    pub fn write_tree_diff<W: Write>(
+    pub fn write_tree_diff<W: WriteColor>(
         w: &mut W,
         tree1: &XTree,
         tree2: &XTree,
-        options: WriteTreeDiffOptions,
+        options: PrintTreeDiffOptions,
     ) -> std::io::Result<()> {
         let edits = diff(tree1, tree2);
 
@@ -278,17 +290,15 @@ pub mod print {
             write_subtree(
                 w,
                 tree1.root(),
-                &WriteTreeOptions::default().with_indent(options.indent),
-                Some("-"),
-                None,
+                &PrintTreeOptions::default().with_indent(options.indent),
+                GutterKind::Delete,
                 &mut vlines,
             )?;
             return write_subtree(
                 w,
                 tree2.root(),
-                &WriteTreeOptions::default().with_indent(options.indent),
-                Some("+"),
-                None,
+                &PrintTreeOptions::default().with_indent(options.indent),
+                GutterKind::Add,
                 &mut vlines,
             );
         }
@@ -311,11 +321,11 @@ pub mod print {
         write_subtree_diff(w, tree1.root(), &changed_nodes, &options, &mut vlines)
     }
 
-    fn write_subtree_diff<W: Write>(
+    fn write_subtree_diff<W: WriteColor>(
         w: &mut W,
         node: XNode,
         changed_nodes: &HashMap<XNodeId, Vec<Edit>>,
-        options: &WriteTreeDiffOptions,
+        options: &PrintTreeDiffOptions,
         vlines: &mut Vec<bool>,
     ) -> std::io::Result<()> {
         if let Some(edits) = changed_nodes.get(&node.id()) {
@@ -323,9 +333,8 @@ pub mod print {
                 write_node_line(
                     w,
                     node,
-                    &WriteTreeOptions::default().with_indent(options.indent),
-                    Some(" "),
-                    None,
+                    &PrintTreeOptions::default().with_indent(options.indent),
+                    GutterKind::Blank,
                     vlines,
                 )?;
                 let children = node.children();
@@ -350,35 +359,31 @@ pub mod print {
                         write_subtree(
                             w,
                             *child_node,
-                            &WriteTreeOptions::default().with_indent(options.indent),
-                            Some("+"),
-                            None,
+                            &PrintTreeOptions::default().with_indent(options.indent),
+                            GutterKind::Add,
                             vlines,
                         )?;
                     }
                     Edit::Delete(_) => write_subtree(
                         w,
                         node,
-                        &WriteTreeOptions::default().with_indent(options.indent),
-                        Some("-"),
-                        None,
+                        &PrintTreeOptions::default().with_indent(options.indent),
+                        GutterKind::Delete,
                         vlines,
                     )?,
                     Edit::Update { old, new } => {
                         write_subtree(
                             w,
                             *old,
-                            &WriteTreeOptions::default().with_indent(options.indent),
-                            Some("-"),
-                            None,
+                            &PrintTreeOptions::default().with_indent(options.indent),
+                            GutterKind::Delete,
                             vlines,
                         )?;
                         write_subtree(
                             w,
                             *new,
-                            &WriteTreeOptions::default().with_indent(options.indent),
-                            Some("+"),
-                            None,
+                            &PrintTreeOptions::default().with_indent(options.indent),
+                            GutterKind::Add,
                             vlines,
                         )?;
                     }
@@ -392,9 +397,8 @@ pub mod print {
             write_node_line(
                 w,
                 node,
-                &WriteTreeOptions::default().with_indent(options.indent),
-                Some(" "),
-                None,
+                &PrintTreeOptions::default().with_indent(options.indent),
+                GutterKind::Blank,
                 vlines,
             )?;
             let children = node.children();
@@ -414,7 +418,7 @@ pub mod print {
         Ok(())
     }
 
-    impl Default for WriteTreeOptions<'_> {
+    impl Default for PrintTreeOptions<'_> {
         fn default() -> Self {
             Self {
                 marker: HashMap::new(),
@@ -424,7 +428,7 @@ pub mod print {
         }
     }
 
-    impl<'a> WriteTreeOptions<'a> {
+    impl<'a> PrintTreeOptions<'a> {
         pub fn with_indent(mut self, n: usize) -> Self {
             assert!(n > 0);
             self.indent = n;
@@ -445,18 +449,23 @@ pub mod print {
         }
     }
 
-    pub fn print_tree(tree: &XTree, options: WriteTreeOptions) {
-        let mut stdout = std::io::stdout();
+    pub fn print_tree(tree: &XTree, options: PrintTreeOptions) {
+        let mut stdout = StandardStream::stdout(ColorChoice::Never);
         write_tree(&mut stdout, tree, options).unwrap();
     }
 
-    pub fn write_tree<W: Write>(
+    pub fn print_tree_diff(tree1: &XTree, tree2: &XTree, options: PrintTreeDiffOptions) {
+        let mut stdout = StandardStream::stdout(ColorChoice::Always);
+        write_tree_diff(&mut stdout, tree1, tree2, options).unwrap();
+    }
+
+    pub fn write_tree<W: WriteColor>(
         w: &mut W,
         tree: &XTree,
-        options: WriteTreeOptions,
+        options: PrintTreeOptions,
     ) -> std::io::Result<()> {
         let mut vlines = Vec::new();
-        write_subtree(w, tree.root(), &options, None, None, &mut vlines)
+        write_subtree(w, tree.root(), &options, GutterKind::None, &mut vlines)
     }
 
     fn node_text_prefix(node: &XNode, with_id: bool, marker: &HashMap<XNodeId, String>) -> String {
@@ -497,15 +506,14 @@ pub mod print {
         format!("{}{}", prefix, node_str)
     }
 
-    fn write_node_line<W: Write>(
+    fn write_node_line<W: WriteColor>(
         w: &mut W,
         node: XNode,
-        options: &WriteTreeOptions<'_>,
-        gutter: Option<&str>,
-        color: Option<&ColorSpec>,
+        options: &PrintTreeOptions<'_>,
+        gutter: GutterKind,
         vlines: &mut Vec<bool>,
     ) -> std::io::Result<()> {
-        let gutter_str = gutter.unwrap_or_default();
+        let gutter_str = gutter.symbol();
         let node_prefix = node_text_prefix(&node, options.with_id, &options.marker);
         let node_line = if !vlines.is_empty() {
             let mut prefix = String::new();
@@ -525,15 +533,24 @@ pub mod print {
         writeln!(w, "{}{}", gutter_str, node_line)
     }
 
-    fn write_subtree<W: Write>(
+    fn write_subtree<W: WriteColor>(
         w: &mut W,
         node: XNode,
-        options: &WriteTreeOptions<'_>,
-        gutter: Option<&str>,
-        color: Option<&ColorSpec>,
+        options: &PrintTreeOptions<'_>,
+        gutter: GutterKind,
         vlines: &mut Vec<bool>,
     ) -> std::io::Result<()> {
-        write_node_line(w, node, options, gutter, color, vlines)?;
+        match gutter {
+            GutterKind::None => (),
+            GutterKind::Blank => (),
+            GutterKind::Add => {
+                w.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
+            }
+            GutterKind::Delete => {
+                w.set_color(ColorSpec::new().set_fg(Some(Color::Red)))?;
+            }
+        }
+        write_node_line(w, node, options, gutter, vlines)?;
         let children = node.children();
         if children.is_empty() {
             return Ok(());
@@ -544,9 +561,10 @@ pub mod print {
             if i == last_index {
                 *vlines.last_mut().unwrap() = false;
             }
-            write_subtree(w, child, options, gutter, color, vlines)?;
+            write_subtree(w, child, options, gutter, vlines)?;
         }
         vlines.pop();
+        w.reset()?;
         Ok(())
     }
 
@@ -554,14 +572,17 @@ pub mod print {
     mod test {
         use std::{fs, io::Cursor};
 
+        use termcolor::NoColor;
+
         use super::*;
         #[test]
         fn test_print_tree() {
             let content = fs::read_to_string("test/file1.xml").unwrap();
             let tree = XTree::parse(&content).unwrap();
             let mut buffer = Vec::new();
-            let mut cursor = Cursor::new(&mut buffer);
-            write_tree(&mut cursor, &tree, WriteTreeOptions::default()).unwrap();
+            let cursor = Cursor::new(&mut buffer);
+            let mut no_color = NoColor::new(cursor);
+            write_tree(&mut no_color, &tree, PrintTreeOptions::default()).unwrap();
             let expected = r#"
 <Profile>
 └─<Customer>
@@ -623,8 +644,8 @@ pub mod print {
             let tree1 = XTree::parse(&text1).unwrap();
             let text2 = fs::read_to_string("test/file2.xml").unwrap();
             let tree2 = XTree::parse(&text2).unwrap();
-            let mut stdout = std::io::stdout();
-            write_tree_diff(&mut stdout, &tree1, &tree2, WriteTreeDiffOptions::default()).unwrap();
+            let mut stdout = StandardStream::stdout(ColorChoice::Always);
+            write_tree_diff(&mut stdout, &tree1, &tree2, PrintTreeDiffOptions::default()).unwrap();
         }
     }
 }
