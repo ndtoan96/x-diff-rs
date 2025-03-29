@@ -162,7 +162,7 @@ fn calculate_hash_table<'doc>(tree: &'doc XTree) -> HashMap<XNodeId<'doc>, Diges
 
 #[cfg(test)]
 mod test {
-    use crate::tree::print::{WriteTreeOptions, print_tree};
+    use crate::tree::print::{PrintTreeOptions, print_tree};
 
     use super::*;
     use std::fs;
@@ -203,8 +203,8 @@ mod test {
 
         #[cfg(feature = "print")]
         {
-            print_tree(&tree1, WriteTreeOptions::default().with_node_id());
-            print_tree(&tree2, WriteTreeOptions::default().with_node_id());
+            print_tree(&tree1, PrintTreeOptions::default().with_node_id());
+            print_tree(&tree2, PrintTreeOptions::default().with_node_id());
         }
 
         let diff = diff(&tree1, &tree2);

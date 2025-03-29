@@ -63,12 +63,10 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
     pub fn name(&self) -> XNodeName {
         if let Some(name) = self.attr_name {
             XNodeName::AttributeName(name)
+        } else if self.is_text() {
+            XNodeName::Text
         } else {
-            if self.is_text() {
-                XNodeName::Text
-            } else {
-                XNodeName::TagName(self.node.tag_name())
-            }
+            XNodeName::TagName(self.node.tag_name())
         }
     }
 
@@ -183,7 +181,7 @@ impl<'a, 'doc: 'a> XTree<'doc> {
     /// Parse XML to tree structure.
     pub fn parse(text: &'doc str) -> Result<Self, XTreeError> {
         Ok(Self::from(
-            Document::parse(text).map_err(|e| XTreeError::ParseError(e))?,
+            Document::parse(text).map_err(XTreeError::ParseError)?,
         ))
     }
 
@@ -222,7 +220,7 @@ pub mod print {
     use crate::diff::{Edit, diff};
 
     use super::{XNode, XNodeId, XTree};
-    use std::{collections::HashMap, fmt::Display, io::Write};
+    use std::{collections::HashMap, fmt::Display};
 
     #[derive(Debug, Clone)]
     pub struct PrintTreeOptions<'a> {

@@ -22,7 +22,7 @@ let text1 = r#"
   </PersonName>
   <TelephoneInfo PhoneTech="Voice" PhoneUse="Work" >
    <Telephone> <AreaCityCode>206</AreaCityCode>
-	<PhoneNumber>813-8698</PhoneNumber>
+    <PhoneNumber>813-8698</PhoneNumber>
    </Telephone>
   </TelephoneInfo>
   <PaymentForm>
@@ -57,7 +57,7 @@ let text2 = r#"
   </PersonName>
   <TelephoneInfo PhoneTech="Voice" PhoneUse="Work" >
    <Telephone> <AreaCityCode>206</AreaCityCode>
-	<PhoneNumber>813-8698</PhoneNumber>
+    <PhoneNumber>813-8698</PhoneNumber>
    </Telephone>
   </TelephoneInfo>
   <Address>
