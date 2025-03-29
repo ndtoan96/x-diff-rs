@@ -347,11 +347,11 @@ pub mod print {
                 }
                 vlines.push(true);
                 for child in children {
-                    write_subtree_diff(w, child, &changed_nodes, options, vlines)?;
+                    write_subtree_diff(w, child, changed_nodes, options, vlines)?;
                 }
             }
             let last_index = edits.len() - 1;
-            for (i, e) in edits.into_iter().enumerate() {
+            for (i, e) in edits.iter().enumerate() {
                 match e {
                     Edit::Insert {
                         child_node,
@@ -415,7 +415,7 @@ pub mod print {
                 if i == last_index {
                     *vlines.last_mut().unwrap() = false;
                 }
-                write_subtree_diff(w, child, &changed_nodes, options, vlines)?;
+                write_subtree_diff(w, child, changed_nodes, options, vlines)?;
             }
             vlines.pop();
         }
@@ -528,7 +528,7 @@ pub mod print {
         node: XNode,
         options: &PrintTreeOptions<'_>,
         gutter: GutterKind,
-        vlines: &mut Vec<bool>,
+        vlines: &mut [bool],
     ) -> std::io::Result<()> {
         set_color(w, gutter)?;
         let gutter_str = gutter.symbol();
@@ -546,7 +546,7 @@ pub mod print {
             };
             format!("{}{}", prefix, suffix)
         } else {
-            format!("{}", node_text(&node, &node_prefix))
+            node_text(&node, &node_prefix)
         };
         writeln!(w, "{}{}", gutter_str, node_line)?;
         w.reset()
