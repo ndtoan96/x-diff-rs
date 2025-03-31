@@ -220,7 +220,7 @@ pub mod print {
     use crate::diff::{Edit, diff};
 
     use super::{XNode, XNodeId, XTree};
-    use std::{collections::HashMap, fmt::Display};
+    use std::{collections::HashMap, fmt::Display, io::Write};
 
     #[derive(Debug, Clone)]
     pub struct PrintTreeOptions<'a> {
@@ -457,6 +457,7 @@ pub mod print {
     pub fn print_tree(tree: &XTree, options: PrintTreeOptions) {
         let mut stdout = StandardStream::stdout(ColorChoice::Never);
         write_tree(&mut stdout, tree, options).unwrap();
+        stdout.flush().unwrap();
     }
 
     /// Print the tree difference to stdout
@@ -467,6 +468,7 @@ pub mod print {
             ColorChoice::Never
         });
         write_tree_diff(&mut stdout, tree1, tree2, options).unwrap();
+        stdout.flush().unwrap();
     }
 
     pub fn write_tree<W: WriteColor>(
