@@ -138,7 +138,7 @@ pub fn diff<'a, 'doc1, 'doc2>(
     diff_node(tree1.root(), &ht1, tree2.root(), &ht2)
 }
 
-fn calculate_hash_table<'a, 'doc>(tree: &'doc XTree) -> HashMap<String, Digest> {
+fn calculate_hash_table(tree: &XTree) -> HashMap<String, Digest> {
     fn hash_of_node(node: XNode, ht: &mut HashMap<String, Digest>) -> Digest {
         let hash = if node.children().is_empty() {
             node.hash()

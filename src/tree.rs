@@ -304,6 +304,30 @@ pub mod print {
             self.color = yes;
             self
         }
+
+        pub fn with_namespace(mut self, yes: bool) -> Self {
+            self.with_namespace = yes;
+            self
+        }
+    }
+
+    impl PrintTreeOptions {
+        pub fn with_indent(mut self, n: usize) -> Self {
+            assert!(n > 0);
+            self.indent = n;
+            self
+        }
+
+        /// Attach ID to nodes while printing. The node id will be wrapped around `[]`.
+        pub fn with_node_id(mut self) -> Self {
+            self.with_id = true;
+            self
+        }
+
+        pub fn with_namespace(mut self, yes: bool) -> Self {
+            self.with_namespace = yes;
+            self
+        }
     }
 
     pub fn write_tree_diff<W: WriteColor>(
@@ -325,14 +349,18 @@ pub mod print {
             write_subtree(
                 w,
                 tree1.root(),
-                &PrintTreeOptions::default().with_indent(options.indent),
+                &PrintTreeOptions::default()
+                    .with_indent(options.indent)
+                    .with_namespace(options.with_namespace),
                 GutterKind::Delete,
                 &mut vlines,
             )?;
             return write_subtree(
                 w,
                 tree2.root(),
-                &PrintTreeOptions::default().with_indent(options.indent),
+                &PrintTreeOptions::default()
+                    .with_indent(options.indent)
+                    .with_namespace(options.with_namespace),
                 GutterKind::Add,
                 &mut vlines,
             );
@@ -368,7 +396,9 @@ pub mod print {
                 write_node_line(
                     w,
                     node,
-                    &PrintTreeOptions::default().with_indent(options.indent),
+                    &PrintTreeOptions::default()
+                        .with_indent(options.indent)
+                        .with_namespace(options.with_namespace),
                     GutterKind::Blank,
                     vlines,
                 )?;
@@ -394,7 +424,9 @@ pub mod print {
                         write_subtree(
                             w,
                             *child_node,
-                            &PrintTreeOptions::default().with_indent(options.indent),
+                            &PrintTreeOptions::default()
+                                .with_indent(options.indent)
+                                .with_namespace(options.with_namespace),
                             GutterKind::Add,
                             vlines,
                         )?;
@@ -402,7 +434,9 @@ pub mod print {
                     Edit::Delete(_) => write_subtree(
                         w,
                         node,
-                        &PrintTreeOptions::default().with_indent(options.indent),
+                        &PrintTreeOptions::default()
+                            .with_indent(options.indent)
+                            .with_namespace(options.with_namespace),
                         GutterKind::Delete,
                         vlines,
                     )?,
@@ -410,14 +444,18 @@ pub mod print {
                         write_subtree(
                             w,
                             *old,
-                            &PrintTreeOptions::default().with_indent(options.indent),
+                            &PrintTreeOptions::default()
+                                .with_indent(options.indent)
+                                .with_namespace(options.with_namespace),
                             GutterKind::Delete,
                             vlines,
                         )?;
                         write_subtree(
                             w,
                             *new,
-                            &PrintTreeOptions::default().with_indent(options.indent),
+                            &PrintTreeOptions::default()
+                                .with_indent(options.indent)
+                                .with_namespace(options.with_namespace),
                             GutterKind::Add,
                             vlines,
                         )?;
@@ -432,7 +470,9 @@ pub mod print {
             write_node_line(
                 w,
                 node,
-                &PrintTreeOptions::default().with_indent(options.indent),
+                &PrintTreeOptions::default()
+                    .with_indent(options.indent)
+                    .with_namespace(options.with_namespace),
                 GutterKind::Blank,
                 vlines,
             )?;
@@ -451,20 +491,6 @@ pub mod print {
             vlines.pop();
         }
         Ok(())
-    }
-
-    impl PrintTreeOptions {
-        pub fn with_indent(mut self, n: usize) -> Self {
-            assert!(n > 0);
-            self.indent = n;
-            self
-        }
-
-        /// Attach ID to nodes while printing. The node id will be wrapped around `[]`.
-        pub fn with_node_id(mut self) -> Self {
-            self.with_id = true;
-            self
-        }
     }
 
     /// Print the tree to stdout
@@ -495,12 +521,11 @@ pub mod print {
     }
 
     fn node_text_prefix(node: &XNode, with_id: bool) -> String {
-        let id_str = if with_id {
+        if with_id {
             format!("[{}] ", node.id())
         } else {
             String::new()
-        };
-        id_str
+        }
     }
 
     fn node_text(node: &XNode, prefix: &str, with_namespace: bool) -> String {
