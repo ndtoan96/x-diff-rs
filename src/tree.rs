@@ -517,7 +517,7 @@ pub mod print {
                     if let Some(ns) = attribute.namespace() {
                         format!("{{{ns}}}{}: {}", attribute.name(), attribute.value())
                     } else {
-                        format!("{}: {}", attribute.name(), attribute.value())
+                        format!("{}: {:?}", attribute.name(), attribute.value())
                     }
                 }
                 crate::tree::XNodeName::Text => {
@@ -535,7 +535,7 @@ pub mod print {
                     format!("<{}>", expanded_name.name())
                 }
                 crate::tree::XNodeName::AttributeName(attribute) => {
-                    format!("{}: {}", attribute.name(), attribute.value())
+                    format!("{}: {:?}", attribute.name(), attribute.value())
                 }
                 crate::tree::XNodeName::Text => {
                     let text = node.node.text().unwrap_or_default().trim();
