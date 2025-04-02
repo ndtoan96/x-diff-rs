@@ -3,7 +3,7 @@ use std::{
     fmt::Display,
 };
 
-use crate::tree::{XNode, XNodeId, XTree};
+use crate::tree::{XNode, XTree};
 use md5::Digest;
 
 trait Concat {
@@ -69,11 +69,11 @@ pub fn diff<'a, 'doc1, 'doc2>(
 ) -> Diff<'a, 'doc1, 'doc2> {
     fn diff_node<'a, 'doc1, 'doc2>(
         node1: XNode<'a, 'doc1>,
-        ht1: &HashMap<XNodeId<'doc1>, Digest>,
+        ht1: &HashMap<String, Digest>,
         node2: XNode<'a, 'doc2>,
-        ht2: &HashMap<XNodeId<'doc2>, Digest>,
+        ht2: &HashMap<String, Digest>,
     ) -> Diff<'a, 'doc1, 'doc2> {
-        if ht1.get(&node1.id()) == ht2.get(&node2.id()) {
+        if ht1.get(&node1.id().to_string()) == ht2.get(&node2.id().to_string()) {
             return Vec::new();
         }
 
@@ -88,12 +88,12 @@ pub fn diff<'a, 'doc1, 'doc2>(
         let mut iht1: HashMap<_, _> = node1
             .children()
             .iter()
-            .map(|n| (*ht1.get(&n.id()).unwrap(), *n))
+            .map(|n| (*ht1.get(&n.id().to_string()).unwrap(), *n))
             .collect();
         let mut iht2: HashMap<_, _> = node2
             .children()
             .iter()
-            .map(|n| (*ht2.get(&n.id()).unwrap(), *n))
+            .map(|n| (*ht2.get(&n.id().to_string()).unwrap(), *n))
             .collect();
         let children_hashes1: HashSet<_> = iht1.keys().copied().collect();
         let children_hashes2: HashSet<_> = iht2.keys().copied().collect();
@@ -138,11 +138,8 @@ pub fn diff<'a, 'doc1, 'doc2>(
     diff_node(tree1.root(), &ht1, tree2.root(), &ht2)
 }
 
-fn calculate_hash_table<'doc>(tree: &'doc XTree) -> HashMap<XNodeId<'doc>, Digest> {
-    fn hash_of_node<'doc>(
-        node: XNode<'_, 'doc>,
-        ht: &mut HashMap<XNodeId<'doc>, Digest>,
-    ) -> Digest {
+fn calculate_hash_table<'a, 'doc>(tree: &'doc XTree) -> HashMap<String, Digest> {
+    fn hash_of_node(node: XNode, ht: &mut HashMap<String, Digest>) -> Digest {
         let hash = if node.children().is_empty() {
             node.hash()
         } else {
@@ -152,7 +149,7 @@ fn calculate_hash_table<'doc>(tree: &'doc XTree) -> HashMap<XNodeId<'doc>, Diges
             }
             acc
         };
-        ht.insert(node.id(), hash);
+        ht.insert(node.id().to_string(), hash);
         hash
     }
     let mut hash_table = HashMap::new();
@@ -177,7 +174,10 @@ mod test {
         let tree2 = XTree::parse(&text2).unwrap();
         let ht2 = calculate_hash_table(&tree2);
 
-        assert_eq!(ht1.get(&tree1.root().id()), ht2.get(&tree2.root().id()));
+        assert_eq!(
+            ht1.get(&tree1.root().id().to_string()),
+            ht2.get(&tree2.root().id().to_string())
+        );
     }
 
     #[test]
@@ -190,7 +190,10 @@ mod test {
         let tree2 = XTree::parse(&text2).unwrap();
         let ht2 = calculate_hash_table(&tree2);
 
-        assert_ne!(ht1.get(&tree1.root().id()), ht2.get(&tree2.root().id()));
+        assert_ne!(
+            ht1.get(&tree1.root().id().to_string()),
+            ht2.get(&tree2.root().id().to_string())
+        );
     }
 
     #[test]

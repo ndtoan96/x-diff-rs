@@ -1,6 +1,6 @@
 use md5::Digest;
-use roxmltree::{Document, ExpandedName, Node, NodeId};
-use std::{borrow::Cow, fmt::Display};
+use roxmltree::{Attribute, Document, ExpandedName, Node, NodeId};
+use std::{borrow::Cow, fmt::Display, hash::Hash};
 
 #[derive(Debug, Clone)]
 pub enum XTreeError {
@@ -12,30 +12,47 @@ pub enum XTreeError {
 pub struct XTree<'doc>(Document<'doc>);
 
 /// A node in the XML tree. It can be an element node, an attribute node, or a text node.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct XNode<'a, 'doc: 'a> {
     node: Node<'a, 'doc>,
-    attr_name: Option<&'doc str>,
+    attr: Option<Attribute<'a, 'doc>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum XNodeId<'doc> {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum XNodeId<'a, 'doc> {
     ElementOrText(NodeId),
-    Attribute { node_id: NodeId, name: &'doc str },
+    Attribute {
+        node_id: NodeId,
+        attr: Attribute<'a, 'doc>,
+    },
 }
+
+impl Hash for XNode<'_, '_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.id().to_string().hash(state);
+    }
+}
+
+impl Eq for XNode<'_, '_> {}
 
 #[derive(Debug, Clone)]
 pub enum XNodeName<'a, 'b> {
     TagName(ExpandedName<'a, 'b>),
-    AttributeName(&'a str),
+    AttributeName(Attribute<'a, 'b>),
     Text,
 }
 
-impl Display for XNodeId<'_> {
+impl Display for XNodeId<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             XNodeId::ElementOrText(node_id) => write!(f, "{}", node_id.get()),
-            XNodeId::Attribute { node_id, name } => write!(f, "{}[{}]", node_id.get(), name),
+            XNodeId::Attribute { node_id, attr } => {
+                if let Some(ns) = attr.namespace() {
+                    write!(f, "{}[{{{}}}{}]", node_id.get(), ns, attr.name())
+                } else {
+                    write!(f, "{}[{}]", node_id.get(), attr.name())
+                }
+            }
         }
     }
 }
@@ -48,11 +65,11 @@ impl<'doc> From<Document<'doc>> for XTree<'doc> {
 
 impl<'a, 'doc: 'a> XNode<'a, 'doc> {
     /// Get node id.
-    pub fn id(&'a self) -> XNodeId<'doc> {
-        if let Some(name) = self.attr_name {
+    pub fn id(&'a self) -> XNodeId<'a, 'doc> {
+        if let Some(attr) = self.attr {
             XNodeId::Attribute {
                 node_id: self.node.id(),
-                name,
+                attr,
             }
         } else {
             XNodeId::ElementOrText(self.node.id())
@@ -61,8 +78,8 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
 
     /// Get node name.
     pub fn name(&self) -> XNodeName {
-        if let Some(name) = self.attr_name {
-            XNodeName::AttributeName(name)
+        if let Some(attr) = self.attr {
+            XNodeName::AttributeName(attr)
         } else if self.is_text() {
             XNodeName::Text
         } else {
@@ -72,10 +89,10 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
 
     /// Get the parent node.
     pub fn parent(&self) -> Option<Self> {
-        if self.attr_name.is_some() {
+        if self.attr.is_some() {
             Some(Self {
                 node: self.node,
-                attr_name: None,
+                attr: None,
             })
         } else {
             self.node
@@ -83,47 +100,44 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
                 .filter(|p| !p.is_root())
                 .map(|parent| Self {
                     node: parent,
-                    attr_name: None,
+                    attr: None,
                 })
         }
     }
 
     /// Get the children nodes.
     pub fn children(&self) -> Vec<Self> {
-        if self.attr_name.is_some() {
+        if self.attr.is_some() {
             return Vec::new();
         }
         let nodes = self
             .node
             .children()
             .filter(|node| !(node.is_text() && node.text().unwrap().trim().is_empty()))
-            .map(|node| Self {
-                node,
-                attr_name: None,
-            });
+            .map(|node| Self { node, attr: None });
         let attrs = self.node.attributes().map(|attr| Self {
             node: self.node,
-            attr_name: Some(attr.name()),
+            attr: Some(attr),
         });
         nodes.chain(attrs).collect()
     }
 
     pub fn is_attribute(&self) -> bool {
-        self.attr_name.is_some()
+        self.attr.is_some()
     }
 
     pub fn is_text(&self) -> bool {
-        self.attr_name.is_none() && self.node.is_text()
+        self.attr.is_none() && self.node.is_text()
     }
 
     pub fn is_element(&self) -> bool {
-        self.attr_name.is_none() && self.node.is_element()
+        self.attr.is_none() && self.node.is_element()
     }
 
     /// Get the node value. Only attribute and text node have value.
     pub fn value(&self) -> Option<&str> {
-        if let Some(name) = self.attr_name {
-            self.node.attribute(name)
+        if let Some(attr) = self.attr {
+            Some(attr.value())
         } else {
             self.node.text()
         }
@@ -131,19 +145,20 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
 
     /// Get the byte range of this node from the original text.
     pub fn range(&self) -> core::ops::Range<usize> {
-        if let Some(name) = self.attr_name {
-            self.node.attribute_node(name).unwrap().range()
+        if let Some(attr) = self.attr {
+            attr.range()
         } else {
             self.node.range()
         }
     }
 
     pub(crate) fn hash(&self) -> Digest {
-        if let Some(name) = self.attr_name {
+        if let Some(attr) = self.attr {
             md5::compute(format!(
-                "{}={}",
-                name,
-                self.node.attribute(name).unwrap_or_default().trim()
+                "{}{}={}",
+                attr.namespace().unwrap_or_default(),
+                attr.name(),
+                attr.value()
             ))
         } else {
             match self.node.node_type() {
@@ -161,8 +176,12 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
     }
 
     pub(crate) fn signature(&self) -> Cow<str> {
-        if let Some(name) = self.attr_name {
-            Cow::Borrowed(name)
+        if let Some(attr) = self.attr {
+            Cow::Owned(format!(
+                "{}{}",
+                attr.namespace().unwrap_or_default(),
+                attr.name()
+            ))
         } else {
             match self.node.node_type() {
                 roxmltree::NodeType::Element => Cow::Owned(format!(
@@ -186,15 +205,15 @@ impl<'a, 'doc: 'a> XTree<'doc> {
     }
 
     /// Get an [XNode] from [XNodeId].
-    pub fn get_node(&'doc self, id: XNodeId<'doc>) -> Option<XNode<'a, 'doc>> {
+    pub fn get_node(&'doc self, id: XNodeId<'a, 'doc>) -> Option<XNode<'a, 'doc>> {
         match id {
-            XNodeId::ElementOrText(node_id) => self.0.get_node(node_id).map(|node| XNode {
+            XNodeId::ElementOrText(node_id) => self
+                .0
+                .get_node(node_id)
+                .map(|node| XNode { node, attr: None }),
+            XNodeId::Attribute { node_id, attr } => self.0.get_node(node_id).map(|node| XNode {
                 node,
-                attr_name: None,
-            }),
-            XNodeId::Attribute { node_id, name } => self.0.get_node(node_id).map(|node| XNode {
-                node,
-                attr_name: Some(name),
+                attr: Some(attr),
             }),
         }
     }
@@ -203,7 +222,7 @@ impl<'a, 'doc: 'a> XTree<'doc> {
     pub fn root(&self) -> XNode {
         XNode {
             node: self.0.root_element(),
-            attr_name: None,
+            attr: None,
         }
     }
 
@@ -219,18 +238,19 @@ pub mod print {
 
     use crate::diff::{Edit, diff};
 
-    use super::{XNode, XNodeId, XTree};
-    use std::{collections::HashMap, fmt::Display, io::Write};
+    use super::{XNode, XTree};
+    use std::{collections::HashMap, io::Write};
 
     #[derive(Debug, Clone)]
-    pub struct PrintTreeOptions<'a> {
-        marker: HashMap<XNodeId<'a>, String>,
+    pub struct PrintTreeOptions {
         with_id: bool,
+        with_namespace: bool,
         indent: usize,
     }
 
     #[derive(Debug, Clone)]
     pub struct PrintTreeDiffOptions {
+        with_namespace: bool,
         indent: usize,
         color: bool,
     }
@@ -254,11 +274,22 @@ pub mod print {
         }
     }
 
+    impl Default for PrintTreeOptions {
+        fn default() -> Self {
+            Self {
+                indent: 3,
+                with_id: false,
+                with_namespace: false,
+            }
+        }
+    }
+
     impl Default for PrintTreeDiffOptions {
         fn default() -> Self {
             Self {
                 indent: 3,
                 color: true,
+                with_namespace: false,
             }
         }
     }
@@ -313,9 +344,9 @@ pub mod print {
                 crate::diff::Edit::Insert {
                     child_node: _,
                     to_node,
-                } => to_node.id(),
-                crate::diff::Edit::Delete(node) => node.id(),
-                crate::diff::Edit::Update { old, new: _ } => old.id(),
+                } => to_node.id().to_string(),
+                crate::diff::Edit::Delete(node) => node.id().to_string(),
+                crate::diff::Edit::Update { old, new: _ } => old.id().to_string(),
                 crate::diff::Edit::ReplaceRoot => unreachable!(),
             };
             changed_nodes.entry(key).or_insert(Vec::new()).push(e);
@@ -328,11 +359,11 @@ pub mod print {
     fn write_subtree_diff<W: WriteColor>(
         w: &mut W,
         node: XNode,
-        changed_nodes: &HashMap<XNodeId, Vec<Edit>>,
+        changed_nodes: &HashMap<String, Vec<Edit>>,
         options: &PrintTreeDiffOptions,
         vlines: &mut Vec<bool>,
     ) -> std::io::Result<()> {
-        if let Some(edits) = changed_nodes.get(&node.id()) {
+        if let Some(edits) = changed_nodes.get(&node.id().to_string()) {
             if matches!(edits[0], Edit::Insert { .. }) {
                 write_node_line(
                     w,
@@ -422,27 +453,10 @@ pub mod print {
         Ok(())
     }
 
-    impl Default for PrintTreeOptions<'_> {
-        fn default() -> Self {
-            Self {
-                marker: HashMap::new(),
-                indent: 3,
-                with_id: false,
-            }
-        }
-    }
-
-    impl<'a> PrintTreeOptions<'a> {
+    impl PrintTreeOptions {
         pub fn with_indent(mut self, n: usize) -> Self {
             assert!(n > 0);
             self.indent = n;
-            self
-        }
-
-        /// Attach markers to nodes while printing. The marker will be wrapped around `()`.
-        pub fn with_marker<D: Display>(mut self, marker: &HashMap<XNodeId<'a>, D>) -> Self {
-            let new_map = marker.iter().map(|(k, v)| (*k, v.to_string())).collect();
-            self.marker = new_map;
             self
         }
 
@@ -480,31 +494,33 @@ pub mod print {
         write_subtree(w, tree.root(), &options, GutterKind::None, &mut vlines)
     }
 
-    fn node_text_prefix(node: &XNode, with_id: bool, marker: &HashMap<XNodeId, String>) -> String {
+    fn node_text_prefix(node: &XNode, with_id: bool) -> String {
         let id_str = if with_id {
             format!("[{}] ", node.id())
         } else {
             String::new()
         };
-        let m = if let Some(m) = marker.get(&node.id()) {
-            format!("({}) ", m)
-        } else {
-            String::new()
-        };
-        format!("{}{}", id_str, m)
+        id_str
     }
 
-    fn node_text(node: &XNode, prefix: &str) -> String {
-        let node_str = if let Some(name) = node.attr_name {
-            format!(
-                "{}: {}",
-                name,
-                node.node.attribute(name).unwrap_or_default()
-            )
-        } else {
-            match node.node.node_type() {
-                roxmltree::NodeType::Element => format!("<{}>", node.node.tag_name().name()),
-                roxmltree::NodeType::Text => {
+    fn node_text(node: &XNode, prefix: &str, with_namespace: bool) -> String {
+        let node_str = if with_namespace {
+            match node.name() {
+                crate::tree::XNodeName::TagName(expanded_name) => {
+                    if let Some(ns) = expanded_name.namespace() {
+                        format!("<{{{}}}{}>", ns, expanded_name.name())
+                    } else {
+                        format!("<{}>", expanded_name.name())
+                    }
+                }
+                crate::tree::XNodeName::AttributeName(attribute) => {
+                    if let Some(ns) = attribute.namespace() {
+                        format!("{{{ns}}}{}: {}", attribute.name(), attribute.value())
+                    } else {
+                        format!("{}: {}", attribute.name(), attribute.value())
+                    }
+                }
+                crate::tree::XNodeName::Text => {
                     let text = node.node.text().unwrap_or_default().trim();
                     let mut short_text: String = text.chars().take(40).collect();
                     if text.chars().count() > 40 {
@@ -512,7 +528,23 @@ pub mod print {
                     }
                     format!("{:?}", short_text)
                 }
-                _ => unreachable!(),
+            }
+        } else {
+            match node.name() {
+                crate::tree::XNodeName::TagName(expanded_name) => {
+                    format!("<{}>", expanded_name.name())
+                }
+                crate::tree::XNodeName::AttributeName(attribute) => {
+                    format!("{}: {}", attribute.name(), attribute.value())
+                }
+                crate::tree::XNodeName::Text => {
+                    let text = node.node.text().unwrap_or_default().trim();
+                    let mut short_text: String = text.chars().take(40).collect();
+                    if text.chars().count() > 40 {
+                        short_text.push_str("...");
+                    }
+                    format!("{:?}", short_text)
+                }
             }
         };
         format!("{}{}", prefix, node_str)
@@ -530,13 +562,13 @@ pub mod print {
     fn write_node_line<W: WriteColor>(
         w: &mut W,
         node: XNode,
-        options: &PrintTreeOptions<'_>,
+        options: &PrintTreeOptions,
         gutter: GutterKind,
         vlines: &mut [bool],
     ) -> std::io::Result<()> {
         set_color(w, gutter)?;
         let gutter_str = gutter.symbol();
-        let node_prefix = node_text_prefix(&node, options.with_id, &options.marker);
+        let node_prefix = node_text_prefix(&node, options.with_id);
         let node_line = if !vlines.is_empty() {
             let mut prefix = String::new();
             for pipe_char in &vlines[..vlines.len() - 1] {
@@ -544,13 +576,19 @@ pub mod print {
                 prefix.push_str(&" ".repeat(options.indent - 1));
             }
             let suffix = if vlines[vlines.len() - 1] {
-                format!("├─{}", node_text(&node, &node_prefix))
+                format!(
+                    "├─{}",
+                    node_text(&node, &node_prefix, options.with_namespace)
+                )
             } else {
-                format!("└─{}", node_text(&node, &node_prefix))
+                format!(
+                    "└─{}",
+                    node_text(&node, &node_prefix, options.with_namespace)
+                )
             };
             format!("{}{}", prefix, suffix)
         } else {
-            node_text(&node, &node_prefix)
+            node_text(&node, &node_prefix, options.with_namespace)
         };
         writeln!(w, "{}{}", gutter_str, node_line)?;
         w.reset()
@@ -559,7 +597,7 @@ pub mod print {
     fn write_subtree<W: WriteColor>(
         w: &mut W,
         node: XNode,
-        options: &PrintTreeOptions<'_>,
+        options: &PrintTreeOptions,
         gutter: GutterKind,
         vlines: &mut Vec<bool>,
     ) -> std::io::Result<()> {
