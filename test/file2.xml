@@ -6,6 +6,7 @@
    <GivenName Attr="cool">
 	Fred
    </GivenName>
+  <!-- Some comment -->
    <MiddleName>A.</MiddleName>
    <SurName>Smith</SurName>
    <NewStuff>Smurf</NewStuff>

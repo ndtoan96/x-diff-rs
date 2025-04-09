@@ -113,6 +113,7 @@ impl<'a, 'doc: 'a> XNode<'a, 'doc> {
         let nodes = self
             .node
             .children()
+            .filter(|node| node.is_element() || node.is_text())
             .filter(|node| !(node.is_text() && node.text().unwrap().trim().is_empty()))
             .map(|node| Self { node, attr: None });
         let attrs = self.node.attributes().map(|attr| Self {
@@ -674,41 +675,41 @@ pub mod print {
    │  │  └─"Smith"
    │  ├─<Bio>
    │  │  └─"A skilled engineer with a passion for so..."
-   │  └─NameType: Default
+   │  └─NameType: "Default"
    ├─<TelephoneInfo>
    │  ├─<Telephone>
    │  │  ├─<AreaCityCode>
    │  │  │  └─"206"
    │  │  └─<PhoneNumber>
    │  │     └─"813-8698"
-   │  ├─PhoneTech: Voice
-   │  └─PhoneUse: Work
+   │  ├─PhoneTech: "Voice"
+   │  └─PhoneUse: "Work"
    ├─<PaymentForm>
    │  └─"..."
    ├─<Address>
    │  ├─<StreetNmbr>
    │  │  ├─"From hell"
-   │  │  └─POBox: 4321-01
+   │  │  └─POBox: "4321-01"
    │  ├─<BldgRoom>
    │  │  └─"Suite 800"
    │  ├─<CityName>
    │  │  └─"Seattle"
    │  ├─<StateProv>
    │  │  ├─"WA"
-   │  │  └─PostalCode: 98108
+   │  │  └─PostalCode: "98108"
    │  └─<CountryName>
    │     └─"USA"
    └─<Address>
       ├─<StreetNmbr>
       │  ├─"1200 Yakima St"
-      │  └─POBox: 4321-01
+      │  └─POBox: "4321-01"
       ├─<BldgRoom>
       │  └─"Suite 800"
       ├─<CityName>
       │  └─"Seattle"
       ├─<StateProv>
       │  ├─"WA"
-      │  └─PostalCode: 98108
+      │  └─PostalCode: "98108"
       └─<CountryName>
          └─"USA"
 "#;

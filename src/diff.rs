@@ -159,6 +159,7 @@ fn calculate_hash_table(tree: &XTree) -> HashMap<String, Digest> {
 
 #[cfg(test)]
 mod test {
+    #[cfg(feature = "print")]
     use crate::tree::print::{PrintTreeOptions, print_tree};
 
     use super::*;
